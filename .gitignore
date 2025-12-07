@@ -1,0 +1,70 @@
+# ============================
+# Python / Django
+# ============================
+venv/
+__pycache__/
+*.py[cod]
+*.sqlite3
+db.sqlite3
+*.log
+*.pot
+*.pyc
+*.pyo
+*.pyd
+
+# Django static/media
+staticfiles/
+media/
+
+# 환경 변수 파일
+.env
+.env.local
+
+# ============================
+# Node / React / Vite / Electron
+# ============================
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+package-lock.json
+pnpm-lock.yaml
+
+# Vite build output
+dist/
+build/
+*.tsbuildinfo
+
+# Electron builder outputs
+out/
+release/
+app-builds/
+
+# ============================
+# OS / Editor
+# ============================
+
+# VSCode
+.vscode/
+.history/
+
+# macOS
+.DS_Store
+
+# Windows
+Thumbs.db
+desktop.ini
+
+# ============================
+# Production binary / cache
+# ============================
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Local backups
+*.swp
+*.swo
+
