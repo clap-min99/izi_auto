@@ -21,7 +21,7 @@ export const dummyReservations = [
     start: '12/8 11:00',
     end: '12/8 12:00',
     amount: 35000,
-    coupon: '-',
+    coupon: 'O',
     accountSms: '-',
     confirmSms: '전송완료',
   },

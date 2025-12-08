@@ -3,18 +3,25 @@ import AppLayout from './components/layout/AppLayout';
 import HeaderBar from './components/layout/HeaderBar';
 import TabBar from './components/layout/TabBar';
 import ReservationPage from './components/reservations/ReservationPage';
+import CouponModal from './components/coupon/CouponModal';
 import { dummyReservations } from './data/dummyReservations';
 import './App.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('reservation');
+  const [isCouponOpen, setIsCouponOpen] = useState(false);
 
   const handleClickStart = () => {
     console.log('시작 버튼 클릭');
   };
 
   const handleClickCoupon = () => {
-    console.log('쿠폰등록 버튼 클릭');
+    setIsCouponOpen(true);
+  };
+
+  const handleSubmitCoupon = (data) => {
+    console.log('쿠폰 등록 데이터:', data);
+    // TODO: 나중에 Django API 호출해서 실제로 저장
   };
 
   let content = null;
@@ -29,20 +36,27 @@ function App() {
   }
 
   return (
-    <AppLayout
-      header={
-        <>
-          <HeaderBar
-            onClickStart={handleClickStart}
-            onClickCoupon={handleClickCoupon}
-          />
-          <TabBar activeTab={activeTab} onChange={setActiveTab} />
-        </>
-      }
-      content={content}
-      footer={null}
-    />
+    <>
+      <AppLayout
+        header={
+          <>
+            <HeaderBar
+              onClickStart={handleClickStart}
+              onClickCoupon={handleClickCoupon}
+            />
+            <TabBar activeTab={activeTab} onChange={setActiveTab} />
+          </>
+        }
+        content={content}
+        footer={null}
+      />
+
+      <CouponModal
+        open={isCouponOpen}
+        onClose={() => setIsCouponOpen(false)}
+        onSubmit={handleSubmitCoupon}
+      />
+    </>
   );
 }
-
 export default App;

@@ -1,20 +1,21 @@
-import React from 'react';
+import React from "react";
+import styles from "./Pagination.module.css";
 
-function Pagination({ currentPage = 1, totalPages = 5, onChange }) {
+function Pagination({ currentPage, totalPages, onChange }) {
   const pages = Array.from({ length: totalPages }, (_, i) => i + 1);
 
   return (
-    <footer className="pagination">
-      {pages.map((p) => (
+    <div className={styles.pagination}>
+      {pages.map((page) => (
         <button
-          key={p}
-          className={`page-btn ${p === currentPage ? 'active' : ''}`}
-          onClick={() => onChange && onChange(p)}
+          key={page}
+          className={`${styles.pageBtn} ${currentPage === page ? styles.active : ""}`}
+          onClick={() => onChange(page)}
         >
-          {p}
+          {page}
         </button>
       ))}
-    </footer>
+    </div>
   );
 }
 

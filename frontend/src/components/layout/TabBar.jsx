@@ -1,4 +1,5 @@
 import React from 'react';
+import styles from './TabBar.module.css';
 
 const TABS = [
   { id: 'reservation', label: '예약 관리' },
@@ -7,11 +8,11 @@ const TABS = [
 
 function TabBar({ activeTab, onChange }) {
   return (
-    <div className="tabs">
+    <div className={styles.tabs}>
       {TABS.map((tab) => (
         <button
           key={tab.id}
-          className={`tab ${activeTab === tab.id ? 'active' : ''}`}
+          className={`${styles.tab} ${activeTab === tab.id ? styles.active : ''}`}
           onClick={() => onChange(tab.id)}
         >
           {tab.label}
