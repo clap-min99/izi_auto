@@ -1,42 +1,122 @@
-#root {
-  max-width: 1280px;
-  margin: 0 auto;
-  padding: 2rem;
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Noto Sans KR',
+    sans-serif;
+  background: #C0A88F;
+}
+
+.app-root {
+  
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+
+.app-frame {
+  width: 1050px;
+  height: 700px;
+  background: #C0A88F; /* 바깥 브라운 */
+  padding: 40px 40px 20px;
+  display: flex;
+  flex-direction: column;
+}
+
+.app-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.logo-area .title {
+  font-size: 28px;
+  font-weight: 600;
+}
+
+.header-buttons {
+  display: flex;
+  gap: 12px;
+}
+
+.btn {
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.btn-primary {
+  background: #f2e4c7;
+}
+
+.btn-secondary {
+  background: #f2e4c7;
+}
+
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  padding: 8px 20px;
+  border: none;
+  background: #f2e4c7;
+  cursor: pointer;
+}
+
+.tab.active {
+  font-weight: 600;
+}
+
+.table-wrapper {
+  flex: 1;
+  background: #f6f6ee;
+  border-radius: 4px;
+  padding: 12px 18px;
+  overflow: auto;
+}
+
+.reservation-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.reservation-table th,
+.reservation-table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #ddd;
   text-align: center;
 }
 
-.logo {
-  height: 6em;
-  padding: 1.5em;
-  will-change: filter;
-  transition: filter 300ms;
-}
-.logo:hover {
-  filter: drop-shadow(0 0 2em #646cffaa);
-}
-.logo.react:hover {
-  filter: drop-shadow(0 0 2em #61dafbaa);
+.pagination {
+  margin-top: 8px;
+  text-align: center;
+  gap: 8px;
+  display: flex;
+  justify-content: center;
 }
 
-@keyframes logo-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
+.pagination span {
+  padding: 0 4px;
 }
 
-@media (prefers-reduced-motion: no-preference) {
-  a:nth-of-type(2) .logo {
-    animation: logo-spin infinite 20s linear;
-  }
+.page-btn {
+  border: none;
+  background: transparent;
+  padding: 2px 6px;
+  cursor: pointer;
 }
 
-.card {
-  padding: 2em;
+.page-btn.active {
+  font-weight: 600;
+  text-decoration: underline;
 }
 
-.read-the-docs {
-  color: #888;
-}

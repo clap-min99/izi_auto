@@ -18,7 +18,7 @@
     
     4. 저장해놓은 패키지 설치(다른 사람이 설치한 패키지 받기 or 다른 환경에서 새로 시작할 때)
 
-        `pip install requirements.txt`
+        `pip install -r requirements.txt`
     
     5. 가상환경 off
 

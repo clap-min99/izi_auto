@@ -1,0 +1,17 @@
+.root {
+  width: 100vw;
+  height: 100vh;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background: #000;
+}
+
+.frame {
+  width: 1050px;
+  height: 700px;
+  background: #c6a58c;
+  padding: 40px 40px 20px;
+  display: flex;
+  flex-direction: column;
+}

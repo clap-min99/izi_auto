@@ -1,35 +1,48 @@
-import { useState } from 'react'
-import reactLogo from './assets/react.svg'
-import viteLogo from '/vite.svg'
-import './App.css'
+import { useState } from 'react';
+import AppLayout from './components/layout/AppLayout';
+import HeaderBar from './components/layout/HeaderBar';
+import TabBar from './components/layout/TabBar';
+import ReservationPage from './components/reservations/ReservationPage';
+import { dummyReservations } from './data/dummyReservations';
+import './App.css';
 
 function App() {
-  const [count, setCount] = useState(0)
+  const [activeTab, setActiveTab] = useState('reservation');
+
+  const handleClickStart = () => {
+    console.log('시작 버튼 클릭');
+  };
+
+  const handleClickCoupon = () => {
+    console.log('쿠폰등록 버튼 클릭');
+  };
+
+  let content = null;
+  if (activeTab === 'reservation') {
+    content = <ReservationPage reservations={dummyReservations} />;
+  } else if (activeTab === 'prepaid') {
+    content = (
+      <div className="table-wrapper">
+        선불 고객 화면은 나중에 만들 예정입니다.
+      </div>
+    );
+  }
 
   return (
-    <>
-      <div>
-        <a href="https://vite.dev" target="_blank">
-          <img src={viteLogo} className="logo" alt="Vite logo" />
-        </a>
-        <a href="https://react.dev" target="_blank">
-          <img src={reactLogo} className="logo react" alt="React logo" />
-        </a>
-      </div>
-      <h1>Vite + React</h1>
-      <div className="card">
-        <button onClick={() => setCount((count) => count + 1)}>
-          count is {count}
-        </button>
-        <p>
-          Edit <code>src/App.jsx</code> and save to test HMR
-        </p>
-      </div>
-      <p className="read-the-docs">
-        Click on the Vite and React logos to learn more
-      </p>
-    </>
-  )
+    <AppLayout
+      header={
+        <>
+          <HeaderBar
+            onClickStart={handleClickStart}
+            onClickCoupon={handleClickCoupon}
+          />
+          <TabBar activeTab={activeTab} onChange={setActiveTab} />
+        </>
+      }
+      content={content}
+      footer={null}
+    />
+  );
 }
 
-export default App
+export default App;
