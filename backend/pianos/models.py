@@ -1,3 +1,146 @@
 from django.db import models
+from django.utils import timezone
 
-# Create your models here.
+
+class CouponCustomer(models.Model):
+    """쿠폰 고객 테이블"""
+    customer_name = models.CharField(max_length=100, verbose_name="예약자명")
+    phone_number = models.CharField(max_length=20, unique=True, verbose_name="전화번호")
+    remaining_time = models.IntegerField(default=0, verbose_name="잔여시간(분)")
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = 'coupon_customers'
+        verbose_name = '쿠폰 고객'
+        verbose_name_plural = '쿠폰 고객 목록'
+
+    def __str__(self):
+        return f"{self.customer_name} ({self.phone_number})"
+
+
+class Reservation(models.Model):
+    """예약 테이블"""
+    
+    # 예약 상태 선택지
+    STATUS_CHOICES = [
+        ('신청', '신청'),
+        ('확정', '확정'),
+        ('취소', '취소'),
+    ]
+    
+    # SMS 전송 상태 선택지
+    SMS_STATUS_CHOICES = [
+        ('전송전', '전송전'),
+        ('전송완료', '전송완료'),
+        ('전송실패', '전송실패'),
+        ('입금확인전', '입금확인전'),
+    ]
+    
+    # 네이버 예약 고유 ID (중복 방지 & 업데이트용)
+    naver_booking_id = models.CharField(
+        max_length=100, 
+        unique=True,
+        default='',
+        verbose_name="예약번호"
+    )
+
+    customer_name = models.CharField(max_length=100, verbose_name="예약자명")
+    phone_number = models.CharField(max_length=20, verbose_name="전화번호")
+    room_name = models.CharField(max_length=100, verbose_name="예약룸명")
+    reservation_date = models.DateField(verbose_name="예약일자")
+    start_time = models.TimeField(verbose_name="시작시간")
+    end_time = models.TimeField(verbose_name="종료시간")
+    price = models.IntegerField(verbose_name="요금")
+    is_coupon = models.BooleanField(default=False, verbose_name="쿠폰여부")
+    
+    # 문자 발송 상태
+    account_sms_status = models.CharField(
+        max_length=20, 
+        choices=SMS_STATUS_CHOICES, 
+        default='전송전',
+        verbose_name="계좌문자"
+    )
+    complete_sms_status = models.CharField(
+        max_length=20, 
+        choices=SMS_STATUS_CHOICES, 
+        default='입금확인전',
+        verbose_name="완료문자"
+    )
+    
+    # 예약 상태
+    reservation_status = models.CharField(
+        max_length=20, 
+        choices=STATUS_CHOICES, 
+        default='신청',
+        verbose_name="예약상태"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+
+    class Meta:
+        db_table = 'reservations'
+        verbose_name = '예약'
+        verbose_name_plural = '예약 목록'
+        ordering = ['-reservation_date', '-start_time']
+
+    def __str__(self):
+        return f"{self.customer_name} - {self.room_name} ({self.reservation_date})"
+    
+    def get_duration_minutes(self):
+        """예약 시간(분) 계산"""
+        from datetime import datetime, timedelta
+        start = datetime.combine(self.reservation_date, self.start_time)
+        end = datetime.combine(self.reservation_date, self.end_time)
+        if end < start:
+            end += timedelta(days=1)
+        return int((end - start).total_seconds() / 60)
+
+
+class CouponHistory(models.Model):
+    """쿠폰 사용 이력 테이블"""
+    
+    TRANSACTION_TYPE_CHOICES = [
+        ('충전', '충전'),
+        ('사용', '사용'),
+    ]
+    
+    customer = models.ForeignKey(
+        CouponCustomer, 
+        on_delete=models.CASCADE, 
+        related_name='histories',
+        verbose_name="고객"
+    )
+    reservation = models.ForeignKey(
+        Reservation,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='coupon_histories',
+        verbose_name="예약"
+    )
+    
+    customer_name = models.CharField(max_length=100, verbose_name="예약자명")
+    room_name = models.CharField(max_length=100, blank=True, null=True, verbose_name="예약룸명")
+    transaction_date = models.DateField(verbose_name="거래일자")
+    start_time = models.TimeField(blank=True, null=True, verbose_name="시작시간")
+    end_time = models.TimeField(blank=True, null=True, verbose_name="종료시간")
+    remaining_time = models.IntegerField(verbose_name="잔여시간(분)")
+    used_or_charged_time = models.IntegerField(verbose_name="사용/충전시간(분)")
+    transaction_type = models.CharField(
+        max_length=10,
+        choices=TRANSACTION_TYPE_CHOICES,
+        verbose_name="거래유형"
+    )
+    
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
+
+    class Meta:
+        db_table = 'coupon_history'
+        verbose_name = '쿠폰 사용 이력'
+        verbose_name_plural = '쿠폰 사용 이력 목록'
+        ordering = ['-transaction_date', '-created_at']
+
+    def __str__(self):
+        return f"{self.customer_name} - {self.transaction_type} ({self.transaction_date})"
