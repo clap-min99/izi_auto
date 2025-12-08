@@ -1,0 +1,20 @@
+.wrapper {
+  flex: 1;
+  background: #f7f7f4;
+  border-radius: 4px;
+  padding: 12px 18px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 14px;
+}
+
+.table th,
+.table td {
+  padding: 6px 8px;
+  border-bottom: 1px solid #ddd;
+  text-align: center;
+}

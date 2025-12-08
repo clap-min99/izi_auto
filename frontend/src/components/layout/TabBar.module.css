@@ -1,0 +1,17 @@
+.tabs {
+  display: flex;
+  gap: 4px;
+  margin-bottom: 12px;
+}
+
+.tab {
+  padding: 8px 20px;
+  border: none;
+  background: #f2e4c7;
+  cursor: pointer;
+  border-radius: 4px;
+}
+
+.active {
+  font-weight: 600;
+}
