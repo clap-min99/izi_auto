@@ -1,0 +1,50 @@
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 24px;
+}
+
+.logoArea {
+  display: flex;
+  flex-direction: column;
+}
+
+.logoRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.logoImage {
+  width: 100px; 
+  height: 100px;
+  object-fit: contain;
+}
+
+.title {
+  font-size: 30px;
+  font-weight: 500;
+  color: white;
+}
+
+.headerButtons {
+  display: flex;
+  gap: 12px;
+}
+
+.btn {
+  border: none;
+  padding: 10px 24px;
+  border-radius: 8px;
+  font-size: 16px;
+  cursor: pointer;
+}
+
+.primary {
+  background: #f2e4c7;
+}
+
+.secondary {
+  background: #f2e4c7;
+}

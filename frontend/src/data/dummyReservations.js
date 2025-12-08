@@ -1,0 +1,28 @@
+export const dummyReservations = [
+  {
+    id: 2,
+    date: '25/12/7 21:40',
+    name: '박수민',
+    phone: '010-0000-0000',
+    room: 'Room2_삼익 그랜드',
+    start: '12/7 22:00',
+    end: '12/7 23:30',
+    amount: 13500,
+    coupon: 'X',
+    accountSms: '전송완료',
+    confirmSms: '입금확인중',
+  },
+  {
+    id: 1,
+    date: '25/12/7 21:00',
+    name: '박성원',
+    phone: '010-0002-0002',
+    room: 'Room3_야마하 그랜드',
+    start: '12/8 11:00',
+    end: '12/8 12:00',
+    amount: 35000,
+    coupon: 'O',
+    accountSms: '-',
+    confirmSms: '전송완료',
+  },
+];
