@@ -10,17 +10,17 @@
 
 .modal {
   position: relative;
-  width: 600px;
+  width: 450px;
   background: #e2e1d6;
   border-radius: 8px;
-  padding: 40px 60px 32px;
+  padding: 40px 70px 30px;
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.25);
 }
 
 .title {
-  font-size: 28px;
+  font-size: 25px;
   font-weight: 550;
-  margin: 0 40px 40px 0;
+  margin: 0 30px 40px 0;
 }
 
 .closeButton {
@@ -29,7 +29,7 @@
   top: 20px;
   border: none;
   background: transparent;
-  font-size: 28px;
+  font-size: 30px;
   cursor: pointer;
 }
 
@@ -37,7 +37,7 @@
   display: flex;
   flex-direction: column;
   gap: 24px;
-  margin-top: 8px;
+  margin-top: 10px;
 }
 
 .row {
@@ -49,12 +49,12 @@
 .label {
   width: 110px;
   text-align: right;
-  font-size: 22px;
+  font-size: 18px;
 }
 
 .input {
   flex: 1;
-  height: 44px;
+  height: 33px;
   background: #e6e7e7;
   border: none;
   padding: 4px 10px;
@@ -68,13 +68,13 @@
 .actions {
   display: flex;
   justify-content: flex-end;
-  margin-top: 16px;
+  margin-top: 8px;
 }
 
 .submitButton {
   padding: 8px 24px;
   font-size: 18px;
-  border-radius: 8px;
+  border-radius: 4px;
   border: none;
   cursor: pointer;
   background: #b2c7a8;

@@ -5,7 +5,7 @@ import styles from './TabBar.module.css';
 function TabBar({ activeTab, onChange, rightContent }) {
   const TABS = [
     { id: 'reservation', label: '예약 관리' },
-    { id: 'prepaid', label: '선불 고객' },
+    { id: 'prepaid', label: '쿠폰 고객' },
   ];
 
   return (

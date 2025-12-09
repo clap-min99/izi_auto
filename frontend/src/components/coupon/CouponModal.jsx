@@ -55,6 +55,7 @@ function CouponModal({ open, onClose, onSubmit }) {
               className={styles.input}
               value={form.name}
               onChange={handleChange}
+              placeholder='박성원'
             />
           </div>
 
@@ -68,6 +69,7 @@ function CouponModal({ open, onClose, onSubmit }) {
               className={styles.input}
               value={form.phone}
               onChange={handleChange}
+              placeholder='010-0000-0000'
             />
           </div>
 

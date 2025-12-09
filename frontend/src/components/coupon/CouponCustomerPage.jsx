@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import CouponCustomerTable from './CouponCustomerTable';
 import Pagination from '../reservations/Pagination';
-import { fetchCouponCustomers } from '../api/couponCustomerApi';
+import { fetchCouponCustomers, deleteCouponCustomer } from '../api/couponCustomerApi';
 import CouponHistoryModal from './CouponHistoryModal';
 
 function CouponCustomerPage({ search, refreshKey }) {
@@ -9,18 +9,28 @@ function CouponCustomerPage({ search, refreshKey }) {
   const [page, setPage] = useState(1);
   const [pageSize] = useState(20);
   const [totalCount, setTotalCount] = useState(0);
-
-
   const [selectedCustomerId, setSelectedCustomerId] = useState(null);
   const [historyOpen, setHistoryOpen] = useState(false);
-
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
+  const handleClickDelete = async (customer) => {
+  const ok = window.confirm(
+    `${customer.customer_name} 님의 선불 정보를 삭제하시겠습니까?`
+  );
+  if (!ok) return;
 
-  // 🔹 검색어가 바뀌면 1페이지로 리셋
-//   useEffect(() => {
-//     setPage(1);
-//   }, [search]);
+  try {
+    await deleteCouponCustomer(customer.id);
+    // 목록 다시 불러오기
+    const data = await fetchCouponCustomers({ page, pageSize, search });
+    setCustomers(data.results || []);
+    setTotalCount(data.count || 0);
+  } catch (err) {
+    console.error(err);
+    alert(err.message || '삭제에 실패했습니다.');
+  }
+};
 
+ 
   useEffect(() => {
     const load = async () => {
         const data = await fetchCouponCustomers({ page, pageSize, search });
@@ -42,9 +52,9 @@ function CouponCustomerPage({ search, refreshKey }) {
       <CouponCustomerTable
         customers={customers}
         onClickDetail={handleClickDetail}
+        onClickDelete={handleClickDelete}
       />
-
-      <Pagination
+    <Pagination
         currentPage={page}
         totalPages={totalPages}
         onChange={setPage}
@@ -55,7 +65,9 @@ function CouponCustomerPage({ search, refreshKey }) {
         customerId={selectedCustomerId}
         onClose={() => setHistoryOpen(false)}
       />
-    </>
+
+     
+   </>
   );
 }
 

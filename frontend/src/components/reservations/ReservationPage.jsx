@@ -23,15 +23,21 @@ function ReservationPage({ search }) {
 
     const load = async () => {
         const data = await fetchReservations({ page, pageSize, search });
+        const list = data.results || [];
+
+        const sorted = [...list].sort(
+          (a, b) => new Date(b.created_at) - new Date(a.created_at)
+        );
+
         if (isCancelled) return;
 
-        setReservations(data.results || []);
+        setReservations(sorted);
         setTotalCount(data.count || 0);
 
       
     };
 
-    // 처음 한 번은 로딩 표시하며 호출
+    // 처음 한 번은 로딩 표시하며 
     load(true);
 
     // 이후에는 주기적으로 새 데이터 가져오기 (로딩 표시 없이)

@@ -2,21 +2,6 @@ import React, { useEffect, useState } from 'react';
 import styles from './CouponHistoryModal.module.css';
 import { fetchCouponHistory } from '../api/couponCustomerApi';
 
-function formatHours(minutes) {
-  if (minutes == null) return '-';
-  const sign = minutes > 0 ? '+' : minutes < 0 ? '-' : '';
-  const abs = Math.abs(minutes);
-  const hours = abs / 60;
-
-  const hourText = abs % 60 === 0 ? `${hours}시간` : `${hours.toFixed(1)}시간`;
-  return sign ? `${sign}${hourText}` : hourText;
-}
-
-function formatRemain(minutes) {
-  if (minutes == null) return '-';
-  const hours = minutes / 60;
-  return minutes % 60 === 0 ? `${hours}시간` : `${hours.toFixed(1)}시간`;
-}
 
 function CouponHistoryModal({ open, customerId, onClose }) {
   const [customer, setCustomer] = useState(null);
@@ -97,8 +82,8 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                         <td>{h.transaction_type}</td>
                         <td>{h.booking_number}</td>
                         <td>{h.usage_datetime}</td>
-                        <td>{formatRemain(h.remaining_time*60)}</td>
-                        <td>{formatHours(h.charged_or_used_time*60)}</td>
+                        <td>{(h.remaining_time)}</td>
+                        <td>{(h.charged_or_used_time)}</td>
                       </tr>
                     ))
                   )}
@@ -107,7 +92,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
             </div>
 
             <div className={styles.footer}>
-              잔여시간: {formatRemain(remainingTime)}
+              잔여시간: {(remainingTime)}
             </div>
           </>
         )}
