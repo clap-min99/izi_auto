@@ -1,5 +1,5 @@
 // src/api/couponCustomersApi.js
-import { get, post } from './httpClient';
+import { get, post, patch, del } from './httpClient';
 
 // 1) 선불 고객(쿠폰 고객) 목록 조회
 export async function fetchCouponCustomers({ page = 1, pageSize = 20, search = '' } = {}) {
@@ -26,6 +26,16 @@ export async function createOrChargeCouponCustomer({ customer_name, phone_number
   const data = await post('/coupon-customers/', body);
   return data;
 }
+
+export async function updateCouponCustomer(id, body) {
+  return patch(`/coupon-customers/${id}/`, body);
+}
+
+// 🔥 삭제용
+export async function deleteCouponCustomer(id) {
+  return del(`/coupon-customers/${id}/`);
+}
+
 
 export async function fetchCouponHistory(customerId) {
     return get(`/coupon-customers/${customerId}/history/`);

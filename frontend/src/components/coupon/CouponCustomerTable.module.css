@@ -24,11 +24,31 @@
   color: #777;
 }
 
-.detailButton {
+.actionButtons {
+  display: flex;
+  gap: 12px;
+  justify-content: center;
+}
+
+.detailButton,
+.editButton,
+.deleteButton {
   border: none;
-  padding: 4px 10px;
+  padding: 4px 8px;
   border-radius: 6px;
   cursor: pointer;
-  background: #d7e2d6;
   font-size: 12px;
+}
+
+/* 색만 살짝 다르게 */
+.detailButton {
+  background: #d7e2d6;
+}
+
+.editButton {
+  background: #f2e4c7;
+}
+
+.deleteButton {
+  background: #f4c7c3;
 }

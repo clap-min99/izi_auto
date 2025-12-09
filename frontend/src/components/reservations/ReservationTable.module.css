@@ -18,3 +18,20 @@
   border-bottom: 1px solid #ddd;
   text-align: center;
 }
+
+.status {
+  font-weight: 600;
+}
+
+/* 상태별 색상 */
+.statusApply {
+  color: #2a7be4; /* 파란색 (신청) */
+}
+
+.statusConfirm {
+  color: #0e9f6e; /* 초록색 (확정) */
+}
+
+.statusCancel {
+  color: #d11a2a; /* 빨간색 (취소) */
+}

@@ -1,13 +1,6 @@
-import React from 'react';
 import styles from './CouponCustomerTable.module.css';
 
-// function formatRemainingTime(minutes) {
-//   if (minutes == null) return '-';
-//   const hours = minutes;
-//   return minutes % 60 === 0 ? `${hours}시간` : `${hours.toFixed(1)}시간`;
-// }
-
-function CouponCustomerTable({ customers, onClickDetail }) {
+function CouponCustomerTable({ customers, onClickDetail , onClickDelete }) {
   return (
     <div className={styles.wrapper}>
       <table className={styles.table}>
@@ -24,7 +17,7 @@ function CouponCustomerTable({ customers, onClickDetail }) {
           {customers.length === 0 ? (
             <tr>
               <td colSpan={5} className={styles.empty}>
-                등록된 선불 고객이 없습니다.
+                등록된 고객이 없습니다.
               </td>
             </tr>
           ) : (
@@ -33,15 +26,25 @@ function CouponCustomerTable({ customers, onClickDetail }) {
                 <td>{idx + 1}</td>
                 <td>{c.customer_name}</td>
                 <td>{c.phone_number}</td>
-                <td>{c.remaining_time}</td>
+                <td>{(c.remaining_time)}</td>
                 <td>
-                  <button
-                    type="button"
-                    className={styles.detailButton}
-                    onClick={() => onClickDetail && onClickDetail(c)}
-                  >
-                    상세보기
-                  </button>
+                  <div className={styles.actionButtons}>
+                    <button
+                      type="button"
+                      className={styles.detailButton}
+                      onClick={() => onClickDetail && onClickDetail(c)}
+                    >
+                      상세
+                    </button>
+                   
+                    <button
+                      type="button"
+                      className={styles.deleteButton}
+                      onClick={() => onClickDelete && onClickDelete(c)}
+                    >
+                      삭제
+                    </button>
+                  </div>
                 </td>
               </tr>
             ))
