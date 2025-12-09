@@ -1,7 +1,13 @@
+.tabRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 8px;
+}
+
 .tabs {
   display: flex;
   gap: 4px;
-  margin-bottom: 12px;
 }
 
 .tab {
@@ -14,4 +20,18 @@
 
 .active {
   font-weight: 600;
+}
+
+.rightArea {
+  display: flex;
+  align-items: center;
+}
+
+/* 🔥 오른쪽 검색창 */
+.searchInput {
+  width: 200px;
+  padding: 6px 10px;
+  border-radius: 6px;
+  border: 1px solid #ccc;
+  font-size: 14px;
 }

@@ -3,36 +3,64 @@ import AppLayout from './components/layout/AppLayout';
 import HeaderBar from './components/layout/HeaderBar';
 import TabBar from './components/layout/TabBar';
 import ReservationPage from './components/reservations/ReservationPage';
+import CouponCustomerPage from './components/coupon/CouponCustomerPage';
 import CouponModal from './components/coupon/CouponModal';
-import { dummyReservations } from './data/dummyReservations';
-import './App.css';
+import { createOrChargeCouponCustomer } from './components/api/couponCustomerApi';
+import tabStyles from './components/layout/TabBar.module.css';
 
 function App() {
   const [activeTab, setActiveTab] = useState('reservation');
+
+  // 🔥 각 탭 별 검색 상태
+  const [reservationSearch, setReservationSearch] = useState('');
+  const [prepaidSearch, setPrepaidSearch] = useState('');
+
+  // 쿠폰 모달, 쿠폰탭 새로고침
   const [isCouponOpen, setIsCouponOpen] = useState(false);
+  const [couponRefreshKey, setCouponRefreshKey] = useState(0);
 
-  const handleClickStart = () => {
-    console.log('시작 버튼 클릭');
+  const handleSubmitCoupon = async (form) => {
+    await createOrChargeCouponCustomer({
+      customer_name: form.name,
+      phone_number: form.phone,
+      charged_time: Number(form.time) || 0,
+    });
+    setCouponRefreshKey(k => k + 1);
   };
 
-  const handleClickCoupon = () => {
-    setIsCouponOpen(true);
-  };
+  // 🔥 탭 오른쪽 검색창 렌더링
+  let rightSearchInput = null;
 
-  const handleSubmitCoupon = (data) => {
-    console.log('쿠폰 등록 데이터:', data);
-    // TODO: 나중에 Django API 호출해서 실제로 저장
-  };
+  if (activeTab === 'reservation') {
+    rightSearchInput = (
+      <input
+        type="text"
+        placeholder="이름, 전화번호 검색"
+        value={reservationSearch}
+        onChange={(e) => setReservationSearch(e.target.value)}
+        className={tabStyles.searchInput}
+      />
+    );
+  }
 
+  if (activeTab === 'prepaid') {
+    rightSearchInput = (
+      <input
+        type="text"
+        placeholder="이름, 전화번호 검색"
+        value={prepaidSearch}
+        onChange={(e) => setPrepaidSearch(e.target.value)}
+        className={tabStyles.searchInput}
+      />
+    );
+  }
+
+  // 🔥 content 렌더링
   let content = null;
   if (activeTab === 'reservation') {
-    content = <ReservationPage reservations={dummyReservations} />;
-  } else if (activeTab === 'prepaid') {
-    content = (
-      <div className="table-wrapper">
-        선불 고객 화면은 나중에 만들 예정입니다.
-      </div>
-    );
+    content = <ReservationPage search={reservationSearch} />;
+  } else {
+    content = <CouponCustomerPage search={prepaidSearch} refreshKey={couponRefreshKey} />;
   }
 
   return (
@@ -41,10 +69,14 @@ function App() {
         header={
           <>
             <HeaderBar
-              onClickStart={handleClickStart}
-              onClickCoupon={handleClickCoupon}
+              onClickStart={() => {}}
+              onClickCoupon={() => setIsCouponOpen(true)}
             />
-            <TabBar activeTab={activeTab} onChange={setActiveTab} />
+            <TabBar
+              activeTab={activeTab}
+              onChange={setActiveTab}
+              rightContent={rightSearchInput} 
+            />
           </>
         }
         content={content}
@@ -59,4 +91,5 @@ function App() {
     </>
   );
 }
+
 export default App;
