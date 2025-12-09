@@ -15,18 +15,21 @@ sys.path.insert(0, parent_dir)
 
 from pianos.models import Reservation
 # ⭐ 같은 폴더에 있는 utils를 직접 import
-from utils import parse_reservation_datetime, parse_price
+from pianos.scraper.utils import parse_reservation_datetime, parse_price
 
 
 class NaverPlaceScraper:
     """네이버 스마트플레이스 예약 스크래퍼"""
     
-    def __init__(self, use_existing_chrome=True):
+    def __init__(self, use_existing_chrome=True, dry_run=True):
         """
         Selenium WebDriver 초기화
         Args:
             use_existing_chrome: True면 이미 열린 Chrome 사용, False면 새 창
+            dry_run: True면 실제 버튼 클릭 안함 (로그만)
         """
+        self.dry_run = dry_run  # ⭐ DRY_RUN 모드 추가
+
         chrome_options = Options()
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -39,6 +42,8 @@ class NaverPlaceScraper:
         try:
             self.driver = webdriver.Chrome(options=chrome_options)
             print("✅ Chrome 연결 성공!")
+            if self.dry_run:
+                print("⚠️ DRY_RUN 모드: 확정/취소 버튼을 실제로 누르지 않습니다")
         except Exception as e:
             print(f"❌ Chrome 연결 실패: {e}")
             if use_existing_chrome:
@@ -50,41 +55,26 @@ class NaverPlaceScraper:
                 print("   4. 다시 스크립트 실행")
             raise
         
-        # self.wait = WebDriverWait(self.driver, 10)
+        self.wait = WebDriverWait(self.driver, 10)
         
         # # 이미 로그인된 크롬 프로필 사용 (선택사항)
         # # chrome_options.add_argument(r'--user-data-dir=C:\Users\YourName\AppData\Local\Google\Chrome\User Data')
         
         # self.driver = webdriver.Chrome(options=chrome_options)
-
-        self.wait = WebDriverWait(self.driver, 10)
     
-    def scrape_bookings(self, url):
+    def scrape_all_bookings(self):
         """
-        예약 리스트 스크래핑
-        
-        Args:
-            url: 네이버 스마트플레이스 예약 관리 URL
+        현재 페이지의 모든 예약 스크래핑
         
         Returns:
-            list: 스크래핑한 예약 데이터 리스트
+            list: 예약 데이터 리스트
         """
-        print("🔍 예약 페이지 접속 중...")
-        self.driver.get(url)
-        
-        # 페이지 로딩 대기
-        time.sleep(3)
-        
         try:
-            # 예약 목록 테이블 대기
-            self.wait.until(
-                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+            # 예약 행들 찾기
+            booking_rows = self.driver.find_elements(
+                By.CLASS_NAME, 
+                "BookingListView__contents-user__xNWR6"
             )
-            
-            # 모든 예약 행 가져오기
-            booking_rows = self.driver.find_elements(By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
-            
-            print(f"✅ 총 {len(booking_rows)}개의 예약을 찾았습니다.")
             
             bookings = []
             
@@ -94,13 +84,12 @@ class NaverPlaceScraper:
                     if booking_data:
                         bookings.append(booking_data)
                 except Exception as e:
-                    print(f"⚠️ 예약 파싱 중 에러: {e}")
                     continue
             
             return bookings
             
         except Exception as e:
-            print(f"❌ 스크래핑 에러: {e}")
+            print(f"❌ 스크래핑 실패: {e}")
             return []
     
     def _parse_booking_row(self, row):
@@ -242,6 +231,125 @@ class NaverPlaceScraper:
             'error': error_count,
         }
     
+    def click_pending_button(self):
+        """확정대기 버튼 클릭"""
+        try:
+            pending_btn = self.driver.find_element(
+                By.CSS_SELECTOR, 
+                'input[data-tst_confirm_pending]'
+            )
+            
+            pending_btn.click()
+            time.sleep(2)
+            
+            print("✅ 확정대기 탭 이동")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 확정대기 버튼 클릭 실패: {e}")
+            return False
+    
+    def confirm_in_pending_tab(self, naver_booking_id):
+        """확정대기 탭에서 확정 처리"""
+        try:
+            if self.dry_run:
+                print(f"[DRY_RUN] ✅ 확정 시뮬레이션: {naver_booking_id}")
+                return True
+            
+            # 체크박스 찾아서 클릭
+            booking_rows = self.driver.find_elements(
+                By.CLASS_NAME, 
+                "BookingListView__contents-user__xNWR6"
+            )
+            
+            for row in booking_rows:
+                try:
+                    booking_num = row.find_element(
+                        By.CLASS_NAME, 
+                        "BookingListView__book-number__33dBa"
+                    ).text.strip()
+                    
+                    if booking_num == naver_booking_id:
+                        checkbox = row.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                        checkbox.click()
+                        time.sleep(0.5)
+                        break
+                        
+                except:
+                    continue
+            
+            # 확정 버튼 클릭
+            confirm_btn = self.driver.find_element(
+                By.XPATH, 
+                "//button[contains(text(), '확정')]"
+            )
+            confirm_btn.click()
+            time.sleep(1)
+            
+            print(f"✅ 확정 완료: {naver_booking_id}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 확정 실패: {e}")
+            return False
+
+    def cancel_in_pending_tab(self, naver_booking_id):
+        """확정대기 탭에서 취소 처리"""
+        try:
+            if self.dry_run:
+                print(f"[DRY_RUN] 🚫 취소 시뮬레이션: {naver_booking_id}")
+                return True
+            
+            # 체크박스 찾아서 클릭
+            booking_rows = self.driver.find_elements(
+                By.CLASS_NAME, 
+                "BookingListView__contents-user__xNWR6"
+            )
+            
+            for row in booking_rows:
+                try:
+                    booking_num = row.find_element(
+                        By.CLASS_NAME, 
+                        "BookingListView__book-number__33dBa"
+                    ).text.strip()
+                    
+                    if booking_num == naver_booking_id:
+                        checkbox = row.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
+                        checkbox.click()
+                        time.sleep(0.5)
+                        break
+                        
+                except:
+                    continue
+            
+            # 취소 버튼 클릭
+            cancel_btn = self.driver.find_element(
+                By.XPATH, 
+                "//button[contains(text(), '취소')]"
+            )
+            cancel_btn.click()
+            time.sleep(1)
+            
+            # 확인 팝업
+            try:
+                confirm_popup = self.driver.find_element(By.XPATH, "//button[contains(text(), '확인')]")
+                confirm_popup.click()
+                time.sleep(1)
+            except:
+                pass
+            
+            print(f"✅ 취소 완료: {naver_booking_id}")
+            return True
+            
+        except Exception as e:
+            print(f"❌ 취소 실패: {e}")
+            return False
+
+    def refresh_page(self):
+        """페이지 새로고침"""
+        self.driver.refresh()
+        time.sleep(2)
+
     def close(self):
         """브라우저 종료"""
         if self.driver:
