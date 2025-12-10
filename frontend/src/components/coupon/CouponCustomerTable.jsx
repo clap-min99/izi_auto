@@ -7,7 +7,7 @@ function CouponCustomerTable({ customers, onClickDetail , onClickDelete }) {
         <thead>
           <tr>
             <th>No.</th>
-            <th>고객이름</th>
+            <th>고객명</th>
             <th>전화번호</th>
             <th>잔여시간</th>
             <th></th>

@@ -10,6 +10,10 @@ function CouponModal({ open, onClose, onSubmit }) {
 
   if (!open) return null; // 안 열려있으면 렌더 안함
 
+  const resetForm = () => {
+    setForm({ name: '', phone: '', time: '' });
+  };
+
   const handleChange = (e) => {
     const { name, value } = e.target;
     setForm((prev) => ({ ...prev, [name]: value }));
@@ -20,13 +24,19 @@ function CouponModal({ open, onClose, onSubmit }) {
     if (onSubmit) {
       onSubmit(form);
     }
+    resetForm(); 
+    onClose();
+  };
+
+  const handleClose = () => {
+    resetForm(); 
     onClose();
   };
 
   const handleBackdropClick = (e) => {
     // 배경 클릭 시에만 닫기 (모달 내부 클릭은 무시)
     if (e.target === e.currentTarget) {
-      onClose();
+      handleClose();
     }
   };
 
@@ -36,10 +46,10 @@ function CouponModal({ open, onClose, onSubmit }) {
         <button
           type="button"
           className={styles.closeButton}
-          onClick={onClose}
+          onClick={handleClose}
           aria-label="닫기"
         >
-          ×
+          X
         </button>
 
         <h2 className={styles.title}>선불 쿠폰 등록</h2>
@@ -55,7 +65,7 @@ function CouponModal({ open, onClose, onSubmit }) {
               className={styles.input}
               value={form.name}
               onChange={handleChange}
-              placeholder='박성원'
+              placeholder="박성원"
             />
           </div>
 
@@ -69,7 +79,7 @@ function CouponModal({ open, onClose, onSubmit }) {
               className={styles.input}
               value={form.phone}
               onChange={handleChange}
-              placeholder='010-0000-0000'
+              placeholder="010-0000-0000"
             />
           </div>
 

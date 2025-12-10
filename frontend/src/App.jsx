@@ -4,6 +4,7 @@ import HeaderBar from './components/layout/HeaderBar';
 import TabBar from './components/layout/TabBar';
 import ReservationPage from './components/reservations/ReservationPage';
 import CouponCustomerPage from './components/coupon/CouponCustomerPage';
+import DepositPage from './components/deposit/DepositPage';
 import CouponModal from './components/coupon/CouponModal';
 import { createOrChargeCouponCustomer } from './components/api/couponCustomerApi';
 import tabStyles from './components/layout/TabBar.module.css';
@@ -14,6 +15,8 @@ function App() {
   // 🔥 각 탭 별 검색 상태
   const [reservationSearch, setReservationSearch] = useState('');
   const [prepaidSearch, setPrepaidSearch] = useState('');
+  const [depositSearch, setDepositSearch] = useState('');
+
 
   // 쿠폰 모달, 쿠폰탭 새로고침
   const [isCouponOpen, setIsCouponOpen] = useState(false);
@@ -55,13 +58,32 @@ function App() {
     );
   }
 
+  if (activeTab === 'deposit') {
+    rightSearchInput = (
+      <input
+        type="text"
+        placeholder="입금자 / 금액 검색"
+        value={depositSearch}
+        onChange={(e) => setDepositSearch(e.target.value)}
+        className={tabStyles.searchInput}
+      />
+    );
+  }
+
   // 🔥 content 렌더링
   let content = null;
   if (activeTab === 'reservation') {
     content = <ReservationPage search={reservationSearch} />;
-  } else {
-    content = <CouponCustomerPage search={prepaidSearch} refreshKey={couponRefreshKey} />;
-  }
+    } else if (activeTab === 'prepaid') {
+      content = (
+        <CouponCustomerPage
+          search={prepaidSearch}
+          refreshKey={couponRefreshKey}
+        />
+      );
+    } else if (activeTab === 'deposit') {
+      content = <DepositPage search={depositSearch} />;
+    }
 
   return (
     <>
