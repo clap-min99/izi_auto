@@ -48,7 +48,7 @@ class ReservationMonitor:
         # 이전 예약 리스트 (변경 감지용)
         self.previous_bookings = []
         # 이전 확정대기 개수 (상단 '확정대기 N' 탭의 N 값 추적)
-        self.previous_pending_count = 0
+        # self.previous_pending_count = 0
         
         # 계좌 동기화 타이머
         self.last_account_sync = datetime.now()
@@ -70,8 +70,8 @@ class ReservationMonitor:
         self.previous_bookings = self.scraper.scrape_all_bookings()
         print(f"📋 초기 예약 리스트: {len(self.previous_bookings)}건")
         # 초기 확정대기 개수 기록
-        self.previous_pending_count = self.scraper.get_pending_count()
-        print(f"📌 초기 확정대기 개수: {self.previous_pending_count}")
+        # self.previous_pending_count = self.scraper.get_pending_count()
+        # print(f"📌 초기 확정대기 개수: {self.previous_pending_count}")
 
         # 초기 예약들을 DB와 동기화
         self.sync_initial_bookings_to_db()
@@ -100,7 +100,7 @@ class ReservationMonitor:
                 # 2. 예약 리스트 스크래핑 (기본 예약리스트 탭 기준)
                 current_bookings = self.scraper.scrape_all_bookings()
                 # 2-1. 현재 확정대기 개수 읽기
-                current_pending_count = self.scraper.get_pending_count()
+                # current_pending_count = self.scraper.get_pending_count()
                 
                 # 3. 새로운 예약 확인
                 new_bookings = self.find_new_bookings(current_bookings)
@@ -112,15 +112,15 @@ class ReservationMonitor:
                 )
 
                 # 3-2. 확정대기 숫자가 증가했는지 확인
-                pending_increased = current_pending_count > self.previous_pending_count
+                # pending_increased = current_pending_count > self.previous_pending_count
 
                 # 조건: 새 '신청' 예약 발생 + 확정대기 개수가 이전보다 증가한 경우에만 확정대기 탭 클릭
-                if has_new_application and pending_increased:
-                    print(
-                        f"👉 새 '신청' 예약 + 확정대기 {self.previous_pending_count} → {current_pending_count} 증가 감지 → 확정대기 탭 클릭"
-                    )
-                    # 기본 예약리스트 네이버 창에서 조건 만족 시 확정대기 탭 클릭
-                    self.scraper.click_pending_button()
+                # if has_new_application and pending_increased:
+                #     print(
+                #         f"👉 새 '신청' 예약 + 확정대기 {self.previous_pending_count} → {current_pending_count} 증가 감지 → 확정대기 탭 클릭"
+                #     )
+                #     # 기본 예약리스트 네이버 창에서 조건 만족 시 확정대기 탭 클릭
+                #     self.scraper.click_pending_button()
 
                 # ★ 새 예약이 있을 때만 상세 로그
                 if new_bookings:
@@ -153,7 +153,7 @@ class ReservationMonitor:
                 
                 # 5. 이전 예약 리스트/확정대기 개수 업데이트
                 self.previous_bookings = current_bookings
-                self.previous_pending_count = current_pending_count
+                # self.previous_pending_count = current_pending_count
                 
                 # 6. 새로고침
                 self.scraper.refresh_page()
@@ -179,24 +179,30 @@ class ReservationMonitor:
         입금 확인을 조용히 실행 (로그 최소화)
         """
         try:
-            # 입금 대기 중인 예약만 확인
             from pianos.models import Reservation
-            pending_count = Reservation.objects.filter(
+
+            pending_qs = Reservation.objects.filter(
                 reservation_status='신청',
                 is_coupon=False,
                 account_sms_status='전송완료'
-            ).count()
-            
-            if pending_count > 0:
-                # 최소한의 로그만 출력
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 입금 확인 (대기 {pending_count}건)")
-            
+            )
+
+            pending_count = pending_qs.count()
+
+            # 👉 입금 대기 예약이 없으면 아무 것도 안 함
+            if pending_count == 0:
+                return
+
+            # 최소한의 로그
+            print(f"[{datetime.now().strftime('%H:%M:%S')}] 💰 입금 확인 (대기 {pending_count}건)")
+
+            # 입금 확인 및 선입금 우선 처리
             self.payment_matcher.check_pending_payments()
             self.payment_matcher.handle_first_payment_wins()
-            
+
         except Exception as e:
             print(f"⚠️ 조용한 입금 확인 중 오류: {e}")
-    
+
     def find_new_bookings(self, current_bookings):
         """
         새로운 예약 찾기
@@ -316,10 +322,9 @@ class ReservationMonitor:
         - 잔여 시간 충분하면 즉시 확정
         - 부족하면 취소
         """
-        
         print(f"      🎫 쿠폰 예약 처리 시작")
-            
-            # 1. 쿠폰 고객 조회
+
+        # 1. 쿠폰 고객 조회
         try:
             coupon_customer = CouponCustomer.objects.get(
                 phone_number=booking['phone_number']
@@ -494,7 +499,7 @@ def main():
     # DRY_RUN 모드로 실행
     monitor = ReservationMonitor(
         naver_url=NAVER_URL,
-        dry_run=True
+        dry_run=False
     )
     
     monitor.run()
