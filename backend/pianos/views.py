@@ -1,12 +1,15 @@
+# backend/pianos/views.py
+
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
+from datetime import datetime
 
-from .models import Reservation, CouponCustomer, CouponHistory
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -151,6 +154,190 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 many=True
             ).data
         })
+
+
+# ============================================================
+# ★ 테스트용 API (DRY_RUN 환경에서만 사용)
+# ============================================================
+
+@api_view(['POST', 'GET', 'DELETE'])
+def test_transactions(request):
+    """
+    테스트용 계좌 내역 API (통합)
     
-    # ⭐ charge 액션은 이제 필요 없음 (create에 통합)
-    # 하지만 호환성을 위해 남겨둘 수도 있음
+    POST: 계좌 내역 생성
+    GET: 계좌 내역 조회
+    DELETE: 테스트 데이터 삭제
+    """
+    
+    if request.method == 'POST':
+        return create_test_transaction(request)
+    elif request.method == 'GET':
+        return get_test_transactions(request)
+    elif request.method == 'DELETE':
+        return delete_test_transactions(request)
+
+
+def create_test_transaction(request):
+    """
+    테스트용 계좌 내역 생성
+    
+    POST /api/test/transactions/
+    
+    Request Body:
+    {
+        "depositor_name": "박수민",
+        "amount": 20000
+    }
+    """
+    try:
+        # 요청 데이터 추출
+        depositor_name = request.data.get('depositor_name')
+        amount = request.data.get('amount')
+        
+        # 유효성 검증
+        if not depositor_name or not amount:
+            return Response(
+                {
+                    'error': '필수 파라미터 누락',
+                    'detail': 'depositor_name과 amount는 필수입니다.',
+                    'example': {
+                        'depositor_name': '박수민',
+                        'amount': 20000
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 현재 시간
+        now = datetime.now()
+        
+        # transaction_id 생성 (날짜+시간+밀리초로 고유성 보장)
+        transaction_id = f"TEST_{now.strftime('%Y%m%d%H%M%S')}_{now.microsecond}"
+        
+        # 계좌 내역 생성
+        trans = AccountTransaction.objects.create(
+            transaction_id=transaction_id,
+            transaction_date=now.date(),
+            transaction_time=now.time(),
+            transaction_type='입금',
+            amount=int(amount),
+            balance=1000000,  # 더미 잔액
+            depositor_name=depositor_name,
+            memo='테스트 입금 (POSTMAN)',
+            match_status='확정전'  # 기본값
+        )
+        
+        return Response({
+            'message': '✅ 테스트 계좌 내역 생성 완료',
+            'transaction': {
+                'id': trans.id,
+                'transaction_id': trans.transaction_id,
+                'depositor_name': trans.depositor_name,
+                'amount': trans.amount,
+                'transaction_date': str(trans.transaction_date),
+                'transaction_time': trans.transaction_time.strftime('%H:%M:%S'),
+                'match_status': trans.match_status
+            },
+            'next_step': '이제 monitor.py에서 자동으로 입금 확인이 진행됩니다.'
+        }, status=status.HTTP_201_CREATED)
+        
+    except ValueError as e:
+        return Response(
+            {
+                'error': '잘못된 값',
+                'detail': 'amount는 숫자여야 합니다.',
+                'received': request.data
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        return Response(
+            {
+                'error': '서버 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def get_test_transactions(request):
+    """
+    테스트용 계좌 내역 조회
+    
+    GET /api/test/transactions/
+    
+    Query Parameters:
+        - match_status: 확정전 | 확정완료 | 취소
+    """
+    try:
+        match_status_param = request.query_params.get('match_status')
+        
+        # 필터링
+        queryset = AccountTransaction.objects.filter(
+            transaction_id__startswith='TEST_'  # 테스트 거래만
+        )
+        
+        if match_status_param:
+            queryset = queryset.filter(match_status=match_status_param)
+        
+        # 최신순 정렬
+        transactions = queryset.order_by('-created_at')[:20]
+        
+        # 결과 변환
+        results = []
+        for trans in transactions:
+            results.append({
+                'id': trans.id,
+                'transaction_id': trans.transaction_id,
+                'depositor_name': trans.depositor_name,
+                'amount': trans.amount,
+                'transaction_date': str(trans.transaction_date),
+                'transaction_time': trans.transaction_time.strftime('%H:%M:%S'),
+                'match_status': trans.match_status,
+                'matched_reservations_count': trans.matched_reservations.count(),
+                'created_at': trans.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        return Response({
+            'count': len(results),
+            'transactions': results
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {
+                'error': '조회 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def delete_test_transactions(request):
+    """
+    테스트용 계좌 내역 전체 삭제
+    
+    DELETE /api/test/transactions/
+    
+    주의: TEST_로 시작하는 거래만 삭제됩니다.
+    """
+    try:
+        # TEST_로 시작하는 거래만 삭제
+        deleted_count, _ = AccountTransaction.objects.filter(
+            transaction_id__startswith='TEST_'
+        ).delete()
+        
+        return Response({
+            'message': '✅ 테스트 계좌 내역 삭제 완료',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {
+                'error': '삭제 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
