@@ -4,6 +4,28 @@ from django.utils import timezone
 
 class CouponCustomer(models.Model):
     """쿠폰 고객 테이블"""
+    COUPON_TYPE_CHOICES = [
+        (10, '10시간'),
+        (20, '20시간'),
+        (50, '50시간'),
+        (100, '100시간'),
+    ]
+
+    COUPON_STATUS_CHOICES = [
+        ('활성', '활성'),
+        ('만료', '만료'),
+    ]
+
+    PIANO_CATEGORY_CHOICES = [
+        ('수입', '수입'),
+        ('국산', '국산'),
+    ]
+    coupon_type = models.IntegerField(choices=COUPON_TYPE_CHOICES, null=True, blank=True)
+    coupon_registered_at = models.DateField(null=True, blank=True)
+    coupon_expires_at = models.DateField(null=True, blank=True)
+    coupon_status = models.CharField(max_length=10, choices=COUPON_STATUS_CHOICES, default='활성')
+    piano_category = models.CharField(max_length=10, choices=PIANO_CATEGORY_CHOICES, null=True, blank=True)
+
     customer_name = models.CharField(max_length=100, verbose_name="예약자명")
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="전화번호")
     remaining_time = models.IntegerField(default=0, verbose_name="잔여시간(분)")
@@ -15,9 +37,101 @@ class CouponCustomer(models.Model):
         verbose_name = '쿠폰 고객'
         verbose_name_plural = '쿠폰 고객 목록'
 
+    def refresh_expiry_status(self, today=None):
+        """쿠폰 만료 여부를 확인하고 상태를 갱신합니다."""
+        from django.utils import timezone
+        if today is None:
+            today = timezone.now().date()
+        if self.coupon_expires_at and today > self.coupon_expires_at:
+            if self.coupon_status != '만료':
+                self.coupon_status = '만료'
+                self.save(update_fields=['coupon_status', 'updated_at'])
+        return self.coupon_status
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        if self.coupon_status == '만료':
+            return True
+        if self.coupon_expires_at and timezone.now().date() > self.coupon_expires_at:
+            return True
+        return False
+
     def __str__(self):
         return f"{self.customer_name} ({self.phone_number})"
-
+    
+class AccountTransaction(models.Model):
+    """계좌 거래 내역 테이블 (팝빌 API로부터 수집)"""
+    
+    # 거래 정보
+    transaction_id = models.CharField(
+        max_length=100, 
+        unique=True,
+        verbose_name="거래고유번호"
+    )
+    transaction_date = models.DateField(verbose_name="거래일자")
+    transaction_time = models.TimeField(verbose_name="거래시간")
+    
+    # 입출금 구분
+    TRANSACTION_TYPE_CHOICES = [
+        ('입금', '입금'),
+        ('출금', '출금'),
+    ]
+    transaction_type = models.CharField(
+        max_length=10,
+        choices=TRANSACTION_TYPE_CHOICES,
+        verbose_name="거래구분"
+    )
+    
+    # 금액
+    amount = models.IntegerField(verbose_name="거래금액")
+    balance = models.IntegerField(verbose_name="거래후잔액")
+    
+    # 거래 상대방 정보
+    depositor_name = models.CharField(
+        max_length=100, 
+        blank=True,
+        verbose_name="입금자명"
+    )
+    
+    # 메모
+    memo = models.TextField(blank=True, verbose_name="거래메모")
+    
+    # ★ 매칭 상태 (핵심)
+    MATCH_STATUS_CHOICES = [
+        ('확정전', '확정전'),      # 아직 매칭 안됨 (기본값)
+        ('확정완료', '확정완료'),  # 예약 확정 완료
+        ('취소', '취소'),          # 예약 취소 (환불 대상)
+    ]
+    match_status = models.CharField(
+        max_length=10,
+        choices=MATCH_STATUS_CHOICES,
+        default='확정전',
+        verbose_name="매칭상태"
+    )
+    
+    # 매칭된 예약들 (ManyToMany)
+    matched_reservations = models.ManyToManyField(
+        'Reservation',
+        blank=True,
+        related_name='matched_transactions',
+        verbose_name="매칭된예약들"
+    )
+    
+    # 시스템 정보
+    created_at = models.DateTimeField(auto_now_add=True, verbose_name="수집일시")
+    updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
+    
+    class Meta:
+        db_table = 'account_transactions'
+        verbose_name = '계좌 거래 내역'
+        verbose_name_plural = '계좌 거래 내역 목록'
+        ordering = ['-transaction_date', '-transaction_time']
+        indexes = [
+            models.Index(fields=['-transaction_date', '-transaction_time']),
+            models.Index(fields=['match_status']),
+            models.Index(fields=['depositor_name']),
+        ]
 
 class Reservation(models.Model):
     """예약 테이블"""

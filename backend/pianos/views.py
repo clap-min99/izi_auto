@@ -1,12 +1,17 @@
+# backend/pianos/views.py
+
 from rest_framework import viewsets, status
-from rest_framework.decorators import action
+from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
+from dateutil.relativedelta import relativedelta
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
+from datetime import datetime
 
-from .models import Reservation, CouponCustomer, CouponHistory
+
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -55,7 +60,11 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
             customer_name = serializer.validated_data['customer_name']
             phone_number = serializer.validated_data['phone_number']
             charged_time = serializer.validated_data['charged_time']
-            
+
+            coupon_type = serializer.validated_data['coupon_type']
+            piano_category = serializer.validated_data['piano_category']
+            today = timezone.localdate()
+    
             # 전화번호로 기존 고객 찾기
             customer, created = CouponCustomer.objects.get_or_create(
                 phone_number=phone_number,
@@ -65,12 +74,36 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 }
             )
             
+            # ✅ 쿠폰 타입별 유효기간(개월)
+            months_map = {
+                10: 1,
+                20: 2,
+                50: 2,
+                100: 3,
+            }
+            expire_months = months_map.get(int(coupon_type), 0)
+            expires_at = today + relativedelta(months=expire_months)
+
+            customer, created = CouponCustomer.objects.get_or_create(
+                phone_number=phone_number,
+                defaults={
+                    "customer_name": customer_name,
+                    "remaining_time": 0,
+                }
+            )
+
             # 이름 업데이트 (변경되었을 수 있으니)
             if customer.customer_name != customer_name:
                 customer.customer_name = customer_name
             
+            # ✅ 쿠폰 메타 정보 업데이트(등록/충전할 때 항상 최신 기준으로 덮어씀)
+            customer.coupon_type = int(coupon_type)
+            customer.piano_category = piano_category
+            customer.coupon_registered_at = today
+            customer.coupon_expires_at = expires_at
+            customer.coupon_status = "활성"
+
             # 시간 충전
-            old_remaining_time = customer.remaining_time
             customer.remaining_time += charged_time
             customer.save()
             
@@ -94,6 +127,13 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                     'customer_name': customer.customer_name,
                     'phone_number': customer.phone_number,
                     'remaining_time': customer.remaining_time,
+
+                    # ✅ 응답에 표시
+                    'coupon_type': customer.coupon_type,
+                    'piano_category': customer.piano_category,
+                    'coupon_status': customer.coupon_status,
+                    'coupon_registered_at': customer.coupon_registered_at,
+                    'coupon_expires_at': customer.coupon_expires_at,
                 }
             }
             
@@ -151,6 +191,190 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 many=True
             ).data
         })
+
+
+# ============================================================
+# ★ 테스트용 API (DRY_RUN 환경에서만 사용)
+# ============================================================
+
+@api_view(['POST', 'GET', 'DELETE'])
+def test_transactions(request):
+    """
+    테스트용 계좌 내역 API (통합)
     
-    # ⭐ charge 액션은 이제 필요 없음 (create에 통합)
-    # 하지만 호환성을 위해 남겨둘 수도 있음
+    POST: 계좌 내역 생성
+    GET: 계좌 내역 조회
+    DELETE: 테스트 데이터 삭제
+    """
+    
+    if request.method == 'POST':
+        return create_test_transaction(request)
+    elif request.method == 'GET':
+        return get_test_transactions(request)
+    elif request.method == 'DELETE':
+        return delete_test_transactions(request)
+
+
+def create_test_transaction(request):
+    """
+    테스트용 계좌 내역 생성
+    
+    POST /api/test/transactions/
+    
+    Request Body:
+    {
+        "depositor_name": "박수민",
+        "amount": 20000
+    }
+    """
+    try:
+        # 요청 데이터 추출
+        depositor_name = request.data.get('depositor_name')
+        amount = request.data.get('amount')
+        
+        # 유효성 검증
+        if not depositor_name or not amount:
+            return Response(
+                {
+                    'error': '필수 파라미터 누락',
+                    'detail': 'depositor_name과 amount는 필수입니다.',
+                    'example': {
+                        'depositor_name': '박수민',
+                        'amount': 20000
+                    }
+                },
+                status=status.HTTP_400_BAD_REQUEST
+            )
+        
+        # 현재 시간
+        now = datetime.now()
+        
+        # transaction_id 생성 (날짜+시간+밀리초로 고유성 보장)
+        transaction_id = f"TEST_{now.strftime('%Y%m%d%H%M%S')}_{now.microsecond}"
+        
+        # 계좌 내역 생성
+        trans = AccountTransaction.objects.create(
+            transaction_id=transaction_id,
+            transaction_date=now.date(),
+            transaction_time=now.time(),
+            transaction_type='입금',
+            amount=int(amount),
+            balance=1000000,  # 더미 잔액
+            depositor_name=depositor_name,
+            memo='테스트 입금 (POSTMAN)',
+            match_status='확정전'  # 기본값
+        )
+        
+        return Response({
+            'message': '✅ 테스트 계좌 내역 생성 완료',
+            'transaction': {
+                'id': trans.id,
+                'transaction_id': trans.transaction_id,
+                'depositor_name': trans.depositor_name,
+                'amount': trans.amount,
+                'transaction_date': str(trans.transaction_date),
+                'transaction_time': trans.transaction_time.strftime('%H:%M:%S'),
+                'match_status': trans.match_status
+            },
+            'next_step': '이제 monitor.py에서 자동으로 입금 확인이 진행됩니다.'
+        }, status=status.HTTP_201_CREATED)
+        
+    except ValueError as e:
+        return Response(
+            {
+                'error': '잘못된 값',
+                'detail': 'amount는 숫자여야 합니다.',
+                'received': request.data
+            },
+            status=status.HTTP_400_BAD_REQUEST
+        )
+    except Exception as e:
+        return Response(
+            {
+                'error': '서버 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def get_test_transactions(request):
+    """
+    테스트용 계좌 내역 조회
+    
+    GET /api/test/transactions/
+    
+    Query Parameters:
+        - match_status: 확정전 | 확정완료 | 취소
+    """
+    try:
+        match_status_param = request.query_params.get('match_status')
+        
+        # 필터링
+        queryset = AccountTransaction.objects.filter(
+            transaction_id__startswith='TEST_'  # 테스트 거래만
+        )
+        
+        if match_status_param:
+            queryset = queryset.filter(match_status=match_status_param)
+        
+        # 최신순 정렬
+        transactions = queryset.order_by('-created_at')[:20]
+        
+        # 결과 변환
+        results = []
+        for trans in transactions:
+            results.append({
+                'id': trans.id,
+                'transaction_id': trans.transaction_id,
+                'depositor_name': trans.depositor_name,
+                'amount': trans.amount,
+                'transaction_date': str(trans.transaction_date),
+                'transaction_time': trans.transaction_time.strftime('%H:%M:%S'),
+                'match_status': trans.match_status,
+                'matched_reservations_count': trans.matched_reservations.count(),
+                'created_at': trans.created_at.strftime('%Y-%m-%d %H:%M:%S')
+            })
+        
+        return Response({
+            'count': len(results),
+            'transactions': results
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {
+                'error': '조회 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )
+
+
+def delete_test_transactions(request):
+    """
+    테스트용 계좌 내역 전체 삭제
+    
+    DELETE /api/test/transactions/
+    
+    주의: TEST_로 시작하는 거래만 삭제됩니다.
+    """
+    try:
+        # TEST_로 시작하는 거래만 삭제
+        deleted_count, _ = AccountTransaction.objects.filter(
+            transaction_id__startswith='TEST_'
+        ).delete()
+        
+        return Response({
+            'message': '✅ 테스트 계좌 내역 삭제 완료',
+            'deleted_count': deleted_count
+        }, status=status.HTTP_200_OK)
+        
+    except Exception as e:
+        return Response(
+            {
+                'error': '삭제 오류',
+                'detail': str(e)
+            },
+            status=status.HTTP_500_INTERNAL_SERVER_ERROR
+        )

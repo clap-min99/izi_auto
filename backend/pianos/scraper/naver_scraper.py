@@ -4,9 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+
 import time
 import os
 import sys
+import re
 
 # ⭐ 현재 파일의 상위 디렉토리들을 sys.path에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -38,30 +40,34 @@ class NaverPlaceScraper:
             # ⭐ 이미 실행 중인 Chrome에 연결
             chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
             print("🔗 이미 실행 중인 Chrome에 연결합니다...")
-        
+            self.driver = self._connect_existing_chrome(chrome_options)
+        else:
+            # 새 Chrome 실행
+            print("🆕 새 Chrome 창을 실행합니다...")
+            self.driver = self._start_new_chrome(chrome_options)
+
+    def _connect_existing_chrome(self, chrome_options):
+        """이미 실행 중인 Chrome에 연결"""
         try:
-            self.driver = webdriver.Chrome(options=chrome_options)
-            print("✅ Chrome 연결 성공!")
-            if self.dry_run:
-                print("⚠️ DRY_RUN 모드: 확정/취소 버튼을 실제로 누르지 않습니다")
+            service = Service()
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("✅ 기존 Chrome 연결 성공")
+            return driver
         except Exception as e:
-            print(f"❌ Chrome 연결 실패: {e}")
-            if use_existing_chrome:
-                print("\n📝 해결 방법:")
-                print("   1. Chrome을 완전히 종료")
-                print('   2. 다음 명령으로 Chrome 실행:')
-                print('      "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe" --remote-debugging-port=9222 --user-data-dir="C:\\selenium\\ChromeProfile"')
-                print("   3. Chrome에서 네이버 스마트플레이스 로그인")
-                print("   4. 다시 스크립트 실행")
+            print(f"❌ 기존 Chrome 연결 실패: {e}")
             raise
-        
-        self.wait = WebDriverWait(self.driver, 10)
-        
-        # # 이미 로그인된 크롬 프로필 사용 (선택사항)
-        # # chrome_options.add_argument(r'--user-data-dir=C:\Users\YourName\AppData\Local\Google\Chrome\User Data')
-        
-        # self.driver = webdriver.Chrome(options=chrome_options)
-    
+
+    def _start_new_chrome(self, chrome_options):
+        """새 Chrome 브라우저 시작"""
+        try:
+            service = Service()
+            driver = webdriver.Chrome(service=service, options=chrome_options)
+            print("✅ 새 Chrome 실행 성공")
+            return driver
+        except Exception as e:
+            print(f"❌ 새 Chrome 실행 실패: {e}")
+            raise
+
     def scrape_all_bookings(self):
         """
         현재 페이지의 모든 예약 스크래핑
@@ -78,120 +84,165 @@ class NaverPlaceScraper:
             
             bookings = []
             
+            # print(f"📄 예약 행 {len(booking_rows)}개 발견")
+            
             for row in booking_rows:
-                try:
-                    booking_data = self._parse_booking_row(row)
-                    if booking_data:
-                        bookings.append(booking_data)
-                except Exception as e:
-                    continue
+                booking = self._parse_booking_row(row)
+                if booking:
+                    bookings.append(booking)
             
+            # print(f"✅ 예약 스크래핑 완료: {len(bookings)}건")
             return bookings
-            
+        
         except Exception as e:
-            print(f"❌ 스크래핑 실패: {e}")
+            print(f"❌ 예약 스크래핑 실패: {e}")
+            import traceback
+            traceback.print_exc()
             return []
-    
+
     def _parse_booking_row(self, row):
         """예약 행 하나 파싱"""
         try:
-            # 예약 상태
-            status = row.find_element(By.CSS_SELECTOR, ".BookingListView__state__89OjA .label").text.strip()
-            
-            # 예약자명
-            customer_name = row.find_element(By.CLASS_NAME, "BookingListView__name-ellipsis__snplV").text.strip()
-            
-            # 전화번호
-            phone_number = row.find_element(By.CSS_SELECTOR, ".BookingListView__phone__i04wO span").text.strip()
-            
-            # 예약번호
-            naver_booking_id = row.find_element(By.CLASS_NAME, "BookingListView__book-number__33dBa").text.strip()
-            
-            # 예약일시
-            datetime_str = row.find_element(By.CLASS_NAME, "BookingListView__book-date__F7BCG").text.strip()
+            # 1) 상태 (확정 / 신청 등)
+            status_el = row.find_element(
+                By.CSS_SELECTOR,
+                ".BookingListView__state__89OjA .label"
+            )
+            status = status_el.text.strip()
+
+            # 2) 예약자 이름
+            name_el = row.find_element(
+                By.CLASS_NAME,
+                "BookingListView__name-ellipsis__snplV"
+            )
+            customer_name = name_el.text.strip()
+
+            # 3) 전화번호
+            phone_el = row.find_element(
+                By.CSS_SELECTOR,
+                ".BookingListView__phone__i04wO span"
+            )
+            phone_number = phone_el.text.strip()
+
+            # 4) 네이버 예약번호
+            naver_booking_id = row.find_element(
+                By.CLASS_NAME,
+                "BookingListView__book-number__33dBa"
+            ).text.strip()
+
+            # 5) 예약일시 "25. 12. 10.(수) 오전 11:00~12:00"
+            datetime_str = row.find_element(
+                By.CLASS_NAME,
+                "BookingListView__book-date__F7BCG"
+            ).text.strip()
             parsed_datetime = parse_reservation_datetime(datetime_str)
-            
-            # 룸명
-            room_name = row.find_element(By.CSS_SELECTOR, ".BookingListView__host__a\\+wPh").get_attribute('title')
-            
-            # 총금액
+
+            # 파싱 실패 시 이 행은 스킵
+            if not parsed_datetime:
+                print(f"   ⚠️ 날짜/시간 파싱 실패: {datetime_str}")
+                return None
+
+            # utils.py 정의에 맞게 키 사용
+            reservation_date = parsed_datetime["reservation_date"]
+            start_time = parsed_datetime["start_time"]
+            end_time = parsed_datetime["end_time"]
+
+            # 6) 룸 이름 (title 속성에 들어 있음)
+            room_el = row.find_element(
+                By.CSS_SELECTOR,
+                ".BookingListView__host__a\\+wPh"
+            )
+            room_name = room_el.get_attribute("title") or room_el.text.strip()
+
+            # 7) 총 금액 "11,000원"
             price = 0
             try:
-                price_element = row.find_element(By.CLASS_NAME, "BookingListView__total-price__Y2qoz")
-                
-                # innerText 또는 textContent 사용
-                price_str = price_element.get_attribute('innerText') or price_element.get_attribute('textContent') or price_element.text
-                
-                # 줄바꿈 제거하고 합치기
-                price_str = price_str.replace('\n', '').strip()
-                
-                print(f"   [DEBUG] 가격 텍스트: '{price_str}'")
-                
+                price_el = row.find_element(
+                    By.CLASS_NAME,
+                    "BookingListView__total-price__Y2qoz"
+                )
+                price_str = (
+                    price_el.get_attribute("innerText")
+                    or price_el.get_attribute("textContent")
+                    or price_el.text
+                )
+                price_str = price_str.replace("\n", "").strip()
                 if price_str:
                     price = parse_price(price_str)
-                else:
-                    print(f"   ⚠️ 가격 정보 없음")
-                    
             except Exception as e:
                 print(f"   ⚠️ 가격 파싱 실패: {e}")
-                price = 0
-            
-            # ⭐ 쿠폰 여부 판단 - 옵션 컬럼만 확인!
+
+            # 8) 쿠폰 여부: 옵션 칸에 "쿠폰사용"이 있으면 True
             is_coupon = False
             try:
-                option_element = row.find_element(By.CSS_SELECTOR, ".BookingListView__option__i\\+0Ta")
-                option_text = option_element.get_attribute('title') or option_element.text.strip()
-                
-                print(f"   [DEBUG] 옵션 텍스트: '{option_text}'")
-                
-                # ⭐ 옵션이 비어있지 않고 "쿠폰" 키워드가 있으면 쿠폰 사용
-                if option_text and option_text != '-' and '쿠폰' in option_text:
-                    is_coupon = True
-                    print(f"   ✅ 쿠폰 사용 예약!")
-                else:
-                    print(f"   ℹ️ 일반 예약")
-                    
-            except Exception as e:
-                print(f"   ⚠️ 옵션 확인 중 에러: {e}")
-                # 옵션 컬럼을 못 찾으면 일반 예약으로 간주
+                # 옵션 셀에서 "쿠폰사용" 텍스트가 포함된 div 찾기
+                coupon_el = row.find_elements(
+                    By.XPATH,
+                    ".//div[contains(@class,'BookingListView__option') and (contains(., '쿠폰사용') or contains(@title, '쿠폰사용'))]"
+                )
+                is_coupon = len(coupon_el) > 0
+            except Exception:
                 is_coupon = False
-            
-            if not parsed_datetime:
-                print(f"⚠️ 날짜 파싱 실패: {datetime_str}")
-                return None
-            
+
             booking_data = {
-                'naver_booking_id': naver_booking_id,
-                'customer_name': customer_name,
-                'phone_number': phone_number,
-                'room_name': room_name,
-                'reservation_date': parsed_datetime['reservation_date'],
-                'start_time': parsed_datetime['start_time'],
-                'end_time': parsed_datetime['end_time'],
-                'price': price,
-                'reservation_status': status,
-                'is_coupon': is_coupon,
+                "naver_booking_id": naver_booking_id,
+                "customer_name": customer_name,
+                "phone_number": phone_number,
+                "room_name": room_name,
+                "reservation_date": reservation_date,
+                "start_time": start_time,
+                "end_time": end_time,
+                "price": price,
+                "reservation_status": status,
+                "is_coupon": is_coupon,
             }
-            
-            coupon_mark = "🎫" if is_coupon else "💳"
-            print(f"✅ 파싱 완료: {customer_name} - {naver_booking_id} {coupon_mark} {price:,}원")
+
+            # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
             return booking_data
-            
+
         except Exception as e:
             print(f"⚠️ 예약 행 파싱 에러: {e}")
-            import traceback
-            traceback.print_exc()
             return None
-    
+
+    def _open_booking_sidebar(self, naver_booking_id):
+        """
+        기본 예약 리스트에서 특정 네이버 예약번호 행을 클릭해서
+        오른쪽 '예약 상세정보' 사이드바를 연다.
+        """
+        try:
+            # 예약 행들 로딩될 때까지 기다리기
+            rows = WebDriverWait(self.driver, 10).until(
+                EC.presence_of_all_elements_located(
+                    (By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
+                )
+            )
+
+            for row in rows:
+                try:
+                    book_no_el = row.find_element(
+                        By.CLASS_NAME,
+                        "BookingListView__book-number__33dBa"
+                    )
+                    if book_no_el.text.strip() == str(naver_booking_id):
+                        # 행 전체 클릭 (체크박스 말고)
+                        self.driver.execute_script("arguments[0].click();", row)
+                        WebDriverWait(self.driver, 5).until(
+                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.foot-btn-group"))
+                        )
+                        return True
+                except Exception:
+                    continue
+
+            print(f"⚠️ 사이드바를 열 예약을 찾지 못했습니다: {naver_booking_id}")
+            return False
+
+        except Exception as e:
+            print(f"❌ 사이드바 열기 실패: {e}")
+            return False
+
     def save_to_db(self, bookings):
         """
-        스크래핑한 예약 데이터를 DB에 저장
-        
-        Args:
-            bookings: 예약 데이터 리스트
-        
-        Returns:
-            dict: 저장/업데이트 결과
+        스크래핑한 예약들을 DB에 저장하거나 업데이트
         """
         created_count = 0
         updated_count = 0
@@ -199,7 +250,6 @@ class NaverPlaceScraper:
         
         for booking in bookings:
             try:
-                # 네이버 예약번호로 기존 예약 찾기
                 reservation, created = Reservation.objects.update_or_create(
                     naver_booking_id=booking['naver_booking_id'],
                     defaults={
@@ -211,12 +261,13 @@ class NaverPlaceScraper:
                         'end_time': booking['end_time'],
                         'price': booking['price'],
                         'reservation_status': booking['reservation_status'],
+                        'is_coupon': booking['is_coupon'],
                     }
                 )
                 
                 if created:
                     created_count += 1
-                    print(f"✅ 새 예약 저장: {booking['naver_booking_id']}")
+                    print(f"🆕 새 예약 저장: {booking['naver_booking_id']}")
                 else:
                     updated_count += 1
                     print(f"🔄 예약 업데이트: {booking['naver_booking_id']}")
@@ -231,119 +282,222 @@ class NaverPlaceScraper:
             'error': error_count,
         }
     
-    def click_pending_button(self):
-        """확정대기 버튼 클릭"""
-        try:
-            pending_btn = self.driver.find_element(
-                By.CSS_SELECTOR, 
-                'input[data-tst_confirm_pending]'
-            )
+    # def get_pending_count(self):
+    #     """
+    #     현재 화면에서 '신청' 상태인 예약(=확정대기)을 몇 건인지 세서 반환한다.
+    #     기본 예약리스트/확정대기 탭 둘 다 동작 가능.
+    #     """
+    #     try:
+    #         rows = self.driver.find_elements(
+    #             By.CLASS_NAME,
+    #             "BookingListView__contents-user__xNWR6"
+    #         )
+    #         count = 0
+    #         for row in rows:
+    #             try:
+    #                 status_el = row.find_element(
+    #                     By.CSS_SELECTOR,
+    #                     ".BookingListView__state__89OjA .label"
+    #                 )
+    #                 status = status_el.text.strip()
+    #                 if status == "신청":   # ← 확정대기 상태
+    #                     count += 1
+    #             except:
+    #                 continue
+
+    #         # 디버깅용 로그
+    #         if count > 0:
+    #             print(f"📌 현재 화면 '신청'(확정대기) 개수: {count}")
+    #         return count
+
+    #     except Exception as e:
+    #         print(f"⚠️ 확정대기 개수 읽기 실패: {e}")
+    #         return 0
+
+
+    # def click_pending_button(self):
+    #     """확정대기 버튼 클릭"""
+    #     try:
+    #         pending_btn = self.driver.find_element(
+    #             By.CSS_SELECTOR, 
+    #             'input[data-tst_confirm_pending]'
+    #         )
             
-            pending_btn.click()
-            time.sleep(2)
+    #         pending_btn.click()
+    #         time.sleep(2)
             
-            print("✅ 확정대기 탭 이동")
-            return True
+    #         print("✅ 확정대기 탭 이동")
+    #         return True
             
-        except Exception as e:
-            print(f"❌ 확정대기 버튼 클릭 실패: {e}")
-            return False
+    #     except Exception as e:
+    #         print(f"❌ 확정대기 버튼 클릭 실패: {e}")
+    #         return False
     
     def confirm_in_pending_tab(self, naver_booking_id):
-        """확정대기 탭에서 확정 처리"""
+        """
+        (이름 유지) 기본 예약 리스트에서 대상 클릭 → 사이드바에서 예약확정 2번 → 닫기 → 새로고침
+        """
         try:
+            # 1) 사이드바 오픈
+            if not self._open_booking_sidebar(naver_booking_id):
+                return False
+
             if self.dry_run:
-                print(f"[DRY_RUN] ✅ 확정 시뮬레이션: {naver_booking_id}")
+                print(f"[DRY_RUN] 네이버 확정 시뮬레이션(2단계): {naver_booking_id}")
+                print("[DRY_RUN] 1) 예약 클릭 → 2) 예약확정 클릭 → 3) 예약확정(최종) 클릭 → 4) 닫기 → 5) 새로고침")
                 return True
-            
-            # 체크박스 찾아서 클릭
-            booking_rows = self.driver.find_elements(
-                By.CLASS_NAME, 
-                "BookingListView__contents-user__xNWR6"
+
+            # 2) (1차) 사이드바에서 '예약확정' 버튼 클릭
+            # - a/span 형태거나 button 형태 둘 다 대응
+            first_confirm = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((
+                    By.XPATH,
+                    "//div[contains(@class,'foot-btn-group')]"
+                    "//*[self::a or self::button][.//span[contains(.,'예약확정')] or contains(.,'예약확정')]"
+                ))
             )
-            
-            for row in booking_rows:
-                try:
-                    booking_num = row.find_element(
-                        By.CLASS_NAME, 
-                        "BookingListView__book-number__33dBa"
-                    ).text.strip()
-                    
-                    if booking_num == naver_booking_id:
-                        checkbox = row.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-                        checkbox.click()
-                        time.sleep(0.5)
-                        break
-                        
-                except:
-                    continue
-            
-            # 확정 버튼 클릭
-            confirm_btn = self.driver.find_element(
-                By.XPATH, 
-                "//button[contains(text(), '확정')]"
+            self.driver.execute_script("arguments[0].click();", first_confirm)
+
+            # 3) (2차) 바뀐 화면(또는 확인 화면)에서 최종 '예약확정' 버튼 클릭
+            # 사용자가 준 element:
+            # <button ... data-tst_submit="0">예약확정</button>
+            second_confirm = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((
+                    By.CSS_SELECTOR,
+                    "button[data-tst_submit='0']"
+                ))
             )
-            confirm_btn.click()
-            time.sleep(1)
-            
-            print(f"✅ 확정 완료: {naver_booking_id}")
+
+            # 혹시 같은 data-tst_submit 이 다른 버튼일 가능성 방지: 텍스트도 한번 체크
+            btn_text = (second_confirm.text or "").strip()
+            if "예약확정" not in btn_text:
+                # 텍스트가 예상과 다르면 XPath로 한 번 더 좁혀서 찾기
+                second_confirm = WebDriverWait(self.driver, 8).until(
+                    EC.element_to_be_clickable((
+                        By.XPATH,
+                        "//button[@data-tst_submit='0' and contains(.,'예약확정')]"
+                    ))
+                )
+
+            self.driver.execute_script("arguments[0].click();", second_confirm)
+
+            # 4) 확정 완료 후 사이드바가 확정 상태로 바뀌는 시간 대기(너무 짧으면 닫기 실패 가능)
+            WebDriverWait(self.driver, 8).until(
+                EC.presence_of_element_located((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+            )
+
+            # 5) 닫기 클릭
+            close_btn = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+            )
+            self.driver.execute_script("arguments[0].click();", close_btn)
+
+            # 6) 새로고침
+            self.driver.refresh()
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+            )
+
+            print(f"✅ 네이버 예약 확정 완료(2단계+닫기+새로고침): {naver_booking_id}")
             return True
-            
+
         except Exception as e:
-            print(f"❌ 확정 실패: {e}")
+            print(f"❌ 확정 실패(2단계): {e}")
             return False
 
-    def cancel_in_pending_tab(self, naver_booking_id):
-        """확정대기 탭에서 취소 처리"""
+
+    def cancel_in_pending_tab(self, naver_booking_id, reason="쿠폰 조건 불일치로 자동 취소되었습니다."):
+        """
+        기본 예약 리스트에서 해당 예약 클릭 → 사이드바 '예약취소'(1차) →
+        취소사유 입력 → 최종 '예약 취소'(2차, data-tst_submit='0') 클릭 → 닫기 → 새로고침
+        """
         try:
+            # 0) 사이드바 오픈
+            if not self._open_booking_sidebar(naver_booking_id):
+                return False
+
             if self.dry_run:
-                print(f"[DRY_RUN] 🚫 취소 시뮬레이션: {naver_booking_id}")
+                print(f"[DRY_RUN] 네이버 취소 시뮬레이션(2단계): {naver_booking_id}")
+                print(f"[DRY_RUN] 취소사유 입력: {reason}")
+                print("[DRY_RUN] 1) 예약취소 클릭 → 2) 사유 입력 → 3) 최종 '예약 취소' 클릭")
                 return True
-            
-            # 체크박스 찾아서 클릭
-            booking_rows = self.driver.find_elements(
-                By.CLASS_NAME, 
-                "BookingListView__contents-user__xNWR6"
+
+            # 1) (1차) 사이드바 '예약취소' 클릭
+            # <a ... data-tst_click_link="cancel"><span>예약취소</span></a>
+            first_cancel = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "a[data-tst_click_link='cancel']"))
             )
-            
-            for row in booking_rows:
+            self.driver.execute_script("arguments[0].click();", first_cancel)
+
+            # 2) 취소사유 입력칸(textarea) 대기 후 입력
+            # 네이버 UI가 바뀔 수 있어 기본 textarea 우선, 없으면 placeholder/aria-label 기반으로 백업
+            reason_el = None
+            reason_candidates = [
+                (By.CSS_SELECTOR, "textarea"),
+                (By.XPATH, "//textarea[contains(@placeholder,'사유') or contains(@aria-label,'사유')]"),
+            ]
+
+            for by, sel in reason_candidates:
                 try:
-                    booking_num = row.find_element(
-                        By.CLASS_NAME, 
-                        "BookingListView__book-number__33dBa"
-                    ).text.strip()
-                    
-                    if booking_num == naver_booking_id:
-                        checkbox = row.find_element(By.CSS_SELECTOR, "input[type='checkbox']")
-                        checkbox.click()
-                        time.sleep(0.5)
+                    el = WebDriverWait(self.driver, 6).until(
+                        EC.presence_of_element_located((by, sel))
+                    )
+                    if el.is_displayed():
+                        reason_el = el
                         break
-                        
-                except:
+                except Exception:
                     continue
-            
-            # 취소 버튼 클릭
-            cancel_btn = self.driver.find_element(
-                By.XPATH, 
-                "//button[contains(text(), '취소')]"
-            )
-            cancel_btn.click()
-            time.sleep(1)
-            
-            # 확인 팝업
+
+            if not reason_el:
+                raise Exception("취소사유 입력칸(textarea)을 찾지 못했습니다.")
+
             try:
-                confirm_popup = self.driver.find_element(By.XPATH, "//button[contains(text(), '확인')]")
-                confirm_popup.click()
-                time.sleep(1)
-            except:
+                reason_el.clear()
+            except Exception:
                 pass
-            
-            print(f"✅ 취소 완료: {naver_booking_id}")
+            reason_el.send_keys(reason)
+
+            # 3) (2차) 최종 '예약 취소' 버튼이 활성화될 때까지 기다렸다가 클릭
+            # <button ... data-tst_submit="0">예약 취소</button>
+            final_cancel = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-tst_submit='0']"))
+            )
+
+            # 혹시 다른 submit 버튼이 있을 수 있으니 텍스트도 확인
+            btn_text = (final_cancel.text or "").strip().replace("\n", " ")
+            if "예약" not in btn_text or "취소" not in btn_text:
+                # 텍스트가 다르면 xpath로 한번 더 좁혀서 찾기
+                final_cancel = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@data-tst_submit='0' and contains(.,'취소')]"))
+                )
+
+            self.driver.execute_script("arguments[0].click();", final_cancel)
+
+            # 4) 취소 완료 후 닫기(있으면)
+            try:
+                close_btn = WebDriverWait(self.driver, 6).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+                )
+                self.driver.execute_script("arguments[0].click();", close_btn)
+            except Exception:
+                pass
+
+            # 5) 새로고침
+            self.driver.refresh()
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+            )
+
+            print(f"✅ 네이버 예약 취소 완료(2단계+사유입력): {naver_booking_id}")
             return True
-            
+
         except Exception as e:
-            print(f"❌ 취소 실패: {e}")
+            print(f"❌ 취소 실패(2단계): {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
+
 
     def refresh_page(self):
         """페이지 새로고침"""
