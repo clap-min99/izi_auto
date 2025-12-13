@@ -105,10 +105,10 @@ function App() {
         footer={null}
       />
 
-      <CouponModal
+     <CouponModal
         open={isCouponOpen}
         onClose={() => setIsCouponOpen(false)}
-        onSubmit={handleSubmitCoupon}
+        onSuccess={() => setCouponRefreshKey((k) => k + 1)} 
       />
     </>
   );

@@ -82,8 +82,8 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                         <td>{h.transaction_type}</td>
                         <td>{h.booking_number}</td>
                         <td>{h.usage_datetime}</td>
-                        <td>{(h.remaining_time)}</td>
-                        <td>{(h.charged_or_used_time)}</td>
+                        <td>{(h.remaining_time)/60}</td>
+                        <td>{(h.charged_or_used_time)/60}</td>
                       </tr>
                     ))
                   )}
@@ -92,7 +92,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
             </div>
 
             <div className={styles.footer}>
-              잔여시간: {(remainingTime)}
+              잔여시간: {(remainingTime)/60}
             </div>
           </>
         )}
