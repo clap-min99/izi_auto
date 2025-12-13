@@ -24,11 +24,34 @@ from pianos.automation.sms_sender import SMSSender
 from pianos.automation.conflict_checker import ConflictChecker
 from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
+from django.utils import timezone
 
 
 class ReservationMonitor:
     """예약 실시간 모니터링 시스템 (통합)"""
     
+    ROOM_CATEGORY_MAP = {
+        'Room1_야마하 그랜드': '수입',
+        'Room3_야마하 그랜드': '수입',
+        'Room5_가와이 그랜드': '수입',
+        'Room2_삼익 그랜드': '국산',
+        'Room4_삼익 그랜드': '국산',
+        'Room6_영창 그랜드': '국산',
+    }
+
+    def get_room_category(self, room_name: str):
+        return self.ROOM_CATEGORY_MAP.get(room_name)
+
+    def refresh_coupon_expiry(self, coupon_customer):
+        """만료일이 지났으면 쿠폰 상태를 '만료'로 갱신"""
+        today = timezone.now().date()
+        if getattr(coupon_customer, 'coupon_expires_at', None) and today > coupon_customer.coupon_expires_at:
+            if coupon_customer.coupon_status != '만료':
+                coupon_customer.coupon_status = '만료'
+                coupon_customer.save(update_fields=['coupon_status'])
+        return coupon_customer.coupon_status
+
+
     def __init__(self, naver_url, dry_run=True):
         """
         Args:
@@ -261,12 +284,13 @@ class ReservationMonitor:
                 conflict_result = self.conflict_checker.check_and_handle_conflicts(booking)
                 
                 if conflict_result['action'] == 'cancel':
+                    reason = conflict_result['message']  # ✅ 충돌 사유 그대로 사용
                     # 충돌로 인한 취소
                     print(f"      ❌ 충돌로 인한 취소: {conflict_result['message']}")
                     
                     # 네이버 취소
                     if not self.dry_run:
-                        self.scraper.cancel_in_pending_tab(booking['naver_booking_id'])
+                        self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
                     else:
                         print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
                     
@@ -333,6 +357,26 @@ class ReservationMonitor:
             print(f"      ❌ 쿠폰 고객 정보 없음")
             # 취소 처리
             self._cancel_coupon_booking(reservation, "쿠폰 고객 정보 없음")
+            return
+        
+        # ✅ (추가) 쿠폰 메타 정보가 없으면 취소
+        if not coupon_customer.coupon_type or not coupon_customer.piano_category or not coupon_customer.coupon_expires_at:
+            print(f"      ❌ 쿠폰 정보 미등록(종류/수입국산/만료일 없음) → 취소")
+            self._cancel_coupon_booking(reservation, "쿠폰 정보 미등록")
+            return
+
+        # ✅ (추가) 만료 체크 (만료면 DB 상태 '만료'로 갱신 후 취소)
+        coupon_customer.refresh_expiry_status(today=timezone.localdate())
+        if coupon_customer.coupon_status == "만료":
+            print(f"      ❌ 쿠폰 만료 → 취소")
+            self._cancel_coupon_booking(reservation, "쿠폰 유효기간 만료")
+            return
+
+        # ✅ (추가) 룸 수입/국산 매칭 체크
+        room_category = self.get_room_category(booking.get('room_name'))
+        if room_category and coupon_customer.piano_category != room_category:
+            print(f"      ❌ 쿠폰({coupon_customer.piano_category}) vs 룸({room_category}) 불일치 → 취소")
+            self._cancel_coupon_booking(reservation, "쿠폰 종류(수입/국산) 불일치")
             return
         
         # 2. 예약 시간 계산 (분)

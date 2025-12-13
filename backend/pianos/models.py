@@ -4,6 +4,28 @@ from django.utils import timezone
 
 class CouponCustomer(models.Model):
     """쿠폰 고객 테이블"""
+    COUPON_TYPE_CHOICES = [
+        (10, '10시간'),
+        (20, '20시간'),
+        (50, '50시간'),
+        (100, '100시간'),
+    ]
+
+    COUPON_STATUS_CHOICES = [
+        ('활성', '활성'),
+        ('만료', '만료'),
+    ]
+
+    PIANO_CATEGORY_CHOICES = [
+        ('수입', '수입'),
+        ('국산', '국산'),
+    ]
+    coupon_type = models.IntegerField(choices=COUPON_TYPE_CHOICES, null=True, blank=True)
+    coupon_registered_at = models.DateField(null=True, blank=True)
+    coupon_expires_at = models.DateField(null=True, blank=True)
+    coupon_status = models.CharField(max_length=10, choices=COUPON_STATUS_CHOICES, default='활성')
+    piano_category = models.CharField(max_length=10, choices=PIANO_CATEGORY_CHOICES, null=True, blank=True)
+
     customer_name = models.CharField(max_length=100, verbose_name="예약자명")
     phone_number = models.CharField(max_length=20, unique=True, verbose_name="전화번호")
     remaining_time = models.IntegerField(default=0, verbose_name="잔여시간(분)")
@@ -14,6 +36,26 @@ class CouponCustomer(models.Model):
         db_table = 'coupon_customers'
         verbose_name = '쿠폰 고객'
         verbose_name_plural = '쿠폰 고객 목록'
+
+    def refresh_expiry_status(self, today=None):
+        """쿠폰 만료 여부를 확인하고 상태를 갱신합니다."""
+        from django.utils import timezone
+        if today is None:
+            today = timezone.now().date()
+        if self.coupon_expires_at and today > self.coupon_expires_at:
+            if self.coupon_status != '만료':
+                self.coupon_status = '만료'
+                self.save(update_fields=['coupon_status', 'updated_at'])
+        return self.coupon_status
+
+    @property
+    def is_expired(self):
+        from django.utils import timezone
+        if self.coupon_status == '만료':
+            return True
+        if self.coupon_expires_at and timezone.now().date() > self.coupon_expires_at:
+            return True
+        return False
 
     def __str__(self):
         return f"{self.customer_name} ({self.phone_number})"
