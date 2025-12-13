@@ -37,6 +37,12 @@ class CouponCustomerListSerializer(serializers.ModelSerializer):
             'customer_name',
             'phone_number',
             'remaining_time',  # 분 단위
+
+            'coupon_type',
+            'piano_category',
+            'coupon_status',
+            'coupon_registered_at',
+            'coupon_expires_at',
         ]
         read_only_fields = ['id']
 
@@ -84,12 +90,17 @@ class CouponCustomerDetailSerializer(serializers.ModelSerializer):
             'customer_name',
             'phone_number',
             'remaining_time',  # 분 단위
+
+            'coupon_type',
+            'piano_category',
+            'coupon_status',
+            'coupon_registered_at',
+            'coupon_expires_at',
+
             'histories',
         ]
         read_only_fields = ['id']
 
-
-# ⭐ 새로 추가: 쿠폰 고객 등록/충전 통합 Serializer
 class CouponCustomerRegisterOrChargeSerializer(serializers.Serializer):
     """쿠폰 고객 등록/충전 통합 Serializer"""
     
@@ -97,6 +108,9 @@ class CouponCustomerRegisterOrChargeSerializer(serializers.Serializer):
     phone_number = serializers.CharField(max_length=20, help_text="전화번호")
     charged_time = serializers.IntegerField(min_value=0, help_text="충전할 시간 (분 단위)")
     
+    coupon_type = serializers.ChoiceField(choices=[10, 20, 50, 100], help_text="쿠폰종류(시간권)")
+    piano_category = serializers.ChoiceField(choices=["수입", "국산"], help_text="피아노구분(수입/국산)")
+
     def validate_charged_time(self, value):
         """충전 시간 검증"""
         if value < 0:

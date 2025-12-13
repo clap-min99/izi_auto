@@ -172,8 +172,17 @@ class NaverPlaceScraper:
             except Exception as e:
                 print(f"   ⚠️ 가격 파싱 실패: {e}")
 
-            # 8) 쿠폰 여부 (지금은 아직 기준이 없으니 False 고정)
+            # 8) 쿠폰 여부: 옵션 칸에 "쿠폰사용"이 있으면 True
             is_coupon = False
+            try:
+                # 옵션 셀에서 "쿠폰사용" 텍스트가 포함된 div 찾기
+                coupon_el = row.find_elements(
+                    By.XPATH,
+                    ".//div[contains(@class,'BookingListView__option') and (contains(., '쿠폰사용') or contains(@title, '쿠폰사용'))]"
+                )
+                is_coupon = len(coupon_el) > 0
+            except Exception:
+                is_coupon = False
 
             booking_data = {
                 "naver_booking_id": naver_booking_id,
@@ -397,35 +406,98 @@ class NaverPlaceScraper:
             return False
 
 
-    def cancel_in_pending_tab(self, naver_booking_id):
+    def cancel_in_pending_tab(self, naver_booking_id, reason="쿠폰 조건 불일치로 자동 취소되었습니다."):
         """
-        [이전 이름 유지용] 이제는 확정대기 탭을 사용하지 않고,
-        기본 예약 리스트에서 해당 예약을 클릭 → 사이드바의 '예약취소' 버튼을 누른다.
+        기본 예약 리스트에서 해당 예약 클릭 → 사이드바 '예약취소'(1차) →
+        취소사유 입력 → 최종 '예약 취소'(2차, data-tst_submit='0') 클릭 → 닫기 → 새로고침
         """
         try:
+            # 0) 사이드바 오픈
             if not self._open_booking_sidebar(naver_booking_id):
                 return False
 
             if self.dry_run:
-                print(f"[DRY_RUN] 네이버 취소 시뮬레이션: {naver_booking_id}")
+                print(f"[DRY_RUN] 네이버 취소 시뮬레이션(2단계): {naver_booking_id}")
+                print(f"[DRY_RUN] 취소사유 입력: {reason}")
+                print("[DRY_RUN] 1) 예약취소 클릭 → 2) 사유 입력 → 3) 최종 '예약 취소' 클릭")
                 return True
 
-            cancel_button = WebDriverWait(self.driver, 5).until(
-                EC.element_to_be_clickable((
-                    By.XPATH,
-                    "//div[contains(@class,'foot-btn-group')]"
-                    "//a[span[contains(., '예약취소')]]"
-                ))
+            # 1) (1차) 사이드바 '예약취소' 클릭
+            # <a ... data-tst_click_link="cancel"><span>예약취소</span></a>
+            first_cancel = WebDriverWait(self.driver, 8).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "a[data-tst_click_link='cancel']"))
+            )
+            self.driver.execute_script("arguments[0].click();", first_cancel)
+
+            # 2) 취소사유 입력칸(textarea) 대기 후 입력
+            # 네이버 UI가 바뀔 수 있어 기본 textarea 우선, 없으면 placeholder/aria-label 기반으로 백업
+            reason_el = None
+            reason_candidates = [
+                (By.CSS_SELECTOR, "textarea"),
+                (By.XPATH, "//textarea[contains(@placeholder,'사유') or contains(@aria-label,'사유')]"),
+            ]
+
+            for by, sel in reason_candidates:
+                try:
+                    el = WebDriverWait(self.driver, 6).until(
+                        EC.presence_of_element_located((by, sel))
+                    )
+                    if el.is_displayed():
+                        reason_el = el
+                        break
+                except Exception:
+                    continue
+
+            if not reason_el:
+                raise Exception("취소사유 입력칸(textarea)을 찾지 못했습니다.")
+
+            try:
+                reason_el.clear()
+            except Exception:
+                pass
+            reason_el.send_keys(reason)
+
+            # 3) (2차) 최종 '예약 취소' 버튼이 활성화될 때까지 기다렸다가 클릭
+            # <button ... data-tst_submit="0">예약 취소</button>
+            final_cancel = WebDriverWait(self.driver, 10).until(
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "button[data-tst_submit='0']"))
             )
 
-            self.driver.execute_script("arguments[0].click();", cancel_button)
-            time.sleep(1)
-            print(f"✅ 네이버 예약 취소 완료: {naver_booking_id}")
+            # 혹시 다른 submit 버튼이 있을 수 있으니 텍스트도 확인
+            btn_text = (final_cancel.text or "").strip().replace("\n", " ")
+            if "예약" not in btn_text or "취소" not in btn_text:
+                # 텍스트가 다르면 xpath로 한번 더 좁혀서 찾기
+                final_cancel = WebDriverWait(self.driver, 10).until(
+                    EC.element_to_be_clickable((By.XPATH, "//button[@data-tst_submit='0' and contains(.,'취소')]"))
+                )
+
+            self.driver.execute_script("arguments[0].click();", final_cancel)
+
+            # 4) 취소 완료 후 닫기(있으면)
+            try:
+                close_btn = WebDriverWait(self.driver, 6).until(
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+                )
+                self.driver.execute_script("arguments[0].click();", close_btn)
+            except Exception:
+                pass
+
+            # 5) 새로고침
+            self.driver.refresh()
+            WebDriverWait(self.driver, 10).until(
+                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+            )
+
+            print(f"✅ 네이버 예약 취소 완료(2단계+사유입력): {naver_booking_id}")
             return True
 
         except Exception as e:
-            print(f"❌ 취소 실패: {e}")
+            print(f"❌ 취소 실패(2단계): {e}")
+            import traceback
+            traceback.print_exc()
             return False
+
+
 
     def refresh_page(self):
         """페이지 새로고침"""

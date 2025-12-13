@@ -3,6 +3,24 @@
 """
 from pianos.models import CouponCustomer, CouponHistory
 from django.db import transaction
+from django.utils import timezone
+
+ROOM_CATEGORY_MAP = {
+    "Room1": "수입",
+    "Room3": "수입",
+    "Room5": "수입",
+    "Room2": "국산",
+    "Room4": "국산",
+    "Room6": "국산",
+}
+
+def get_room_category(room_name: str):
+    if not room_name:
+        return None
+    for key, cat in ROOM_CATEGORY_MAP.items():
+        if key in room_name:
+            return cat
+    return None
 
 
 class CouponManager:
@@ -14,25 +32,32 @@ class CouponManager:
     def check_balance(self, reservation):
         """
         쿠폰 잔여시간 확인
-        
-        Returns:
-            (has_balance, customer)
+        Returns: (has_balance, customer)
         """
         try:
-            customer = CouponCustomer.objects.get(
-                phone_number=reservation.phone_number
-            )
-            
-            # 예약 시간 계산 (분)
+            customer = CouponCustomer.objects.get(phone_number=reservation.phone_number)
+
+            # ✅ 쿠폰 메타 정보 없으면 불가
+            if not customer.coupon_type or not customer.piano_category or not customer.coupon_expires_at:
+                return False, customer
+
+            # ✅ 만료 갱신
+            customer.refresh_expire_status(today=timezone.localdate())
+            if customer.coupon_status == "만료":
+                return False, customer
+
+            # ✅ 룸 매칭 체크
+            room_category = get_room_category(getattr(reservation, "room_name", ""))
+            if room_category and customer.piano_category != room_category:
+                return False, customer
+
             duration = reservation.get_duration_minutes()
-            
             if customer.remaining_time >= duration:
-                return True, customer  # 잔여시간 충분
-            else:
-                return False, customer  # 잔여시간 부족
-                
+                return True, customer
+            return False, customer
+
         except CouponCustomer.DoesNotExist:
-            return False, None  # 쿠폰 고객 정보 없음
+            return False, None
     
     @transaction.atomic
     def confirm_and_deduct(self, reservation, customer, scraper):

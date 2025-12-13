@@ -4,10 +4,12 @@ from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter
+from dateutil.relativedelta import relativedelta
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
 from datetime import datetime
+
 
 from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction
 from .serializers import (
@@ -58,7 +60,11 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
             customer_name = serializer.validated_data['customer_name']
             phone_number = serializer.validated_data['phone_number']
             charged_time = serializer.validated_data['charged_time']
-            
+
+            coupon_type = serializer.validated_data['coupon_type']
+            piano_category = serializer.validated_data['piano_category']
+            today = timezone.localdate()
+    
             # 전화번호로 기존 고객 찾기
             customer, created = CouponCustomer.objects.get_or_create(
                 phone_number=phone_number,
@@ -68,12 +74,36 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 }
             )
             
+            # ✅ 쿠폰 타입별 유효기간(개월)
+            months_map = {
+                10: 1,
+                20: 2,
+                50: 2,
+                100: 3,
+            }
+            expire_months = months_map.get(int(coupon_type), 0)
+            expires_at = today + relativedelta(months=expire_months)
+
+            customer, created = CouponCustomer.objects.get_or_create(
+                phone_number=phone_number,
+                defaults={
+                    "customer_name": customer_name,
+                    "remaining_time": 0,
+                }
+            )
+
             # 이름 업데이트 (변경되었을 수 있으니)
             if customer.customer_name != customer_name:
                 customer.customer_name = customer_name
             
+            # ✅ 쿠폰 메타 정보 업데이트(등록/충전할 때 항상 최신 기준으로 덮어씀)
+            customer.coupon_type = int(coupon_type)
+            customer.piano_category = piano_category
+            customer.coupon_registered_at = today
+            customer.coupon_expires_at = expires_at
+            customer.coupon_status = "활성"
+
             # 시간 충전
-            old_remaining_time = customer.remaining_time
             customer.remaining_time += charged_time
             customer.save()
             
@@ -97,6 +127,13 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                     'customer_name': customer.customer_name,
                     'phone_number': customer.phone_number,
                     'remaining_time': customer.remaining_time,
+
+                    # ✅ 응답에 표시
+                    'coupon_type': customer.coupon_type,
+                    'piano_category': customer.piano_category,
+                    'coupon_status': customer.coupon_status,
+                    'coupon_registered_at': customer.coupon_registered_at,
+                    'coupon_expires_at': customer.coupon_expires_at,
                 }
             }
             
