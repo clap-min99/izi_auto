@@ -18,40 +18,23 @@ sys.path.insert(0, BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'izipiano.settings')
 django.setup()
 
-from pianos.models import Reservation, CouponCustomer
+from pianos.models import Reservation
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
 from pianos.automation.conflict_checker import ConflictChecker
 from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
+from pianos.automation.coupon_manager import CouponManager
 from django.utils import timezone
 
 
 class ReservationMonitor:
     """예약 실시간 모니터링 시스템 (통합)"""
+    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수"}  # ✅ 테스트 허용 명단
+
+    def _is_allowed_customer(self, name: str) -> bool:
+        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
     
-    ROOM_CATEGORY_MAP = {
-        'Room1_야마하 그랜드': '수입',
-        'Room3_야마하 그랜드': '수입',
-        'Room5_가와이 그랜드': '수입',
-        'Room2_삼익 그랜드': '국산',
-        'Room4_삼익 그랜드': '국산',
-        'Room6_영창 그랜드': '국산',
-    }
-
-    def get_room_category(self, room_name: str):
-        return self.ROOM_CATEGORY_MAP.get(room_name)
-
-    def refresh_coupon_expiry(self, coupon_customer):
-        """만료일이 지났으면 쿠폰 상태를 '만료'로 갱신"""
-        today = timezone.now().date()
-        if getattr(coupon_customer, 'coupon_expires_at', None) and today > coupon_customer.coupon_expires_at:
-            if coupon_customer.coupon_status != '만료':
-                coupon_customer.coupon_status = '만료'
-                coupon_customer.save(update_fields=['coupon_status'])
-        return coupon_customer.coupon_status
-
-
     def __init__(self, naver_url, dry_run=True):
         """
         Args:
@@ -67,6 +50,7 @@ class ReservationMonitor:
         self.sms_sender = SMSSender(dry_run=dry_run)
         self.account_sync = AccountSyncManager(dry_run=dry_run)
         self.payment_matcher = PaymentMatcher(dry_run=dry_run)
+        self.coupon_manager = CouponManager(dry_run=dry_run)
         
         # 이전 예약 리스트 (변경 감지용)
         self.previous_bookings = []
@@ -160,11 +144,12 @@ class ReservationMonitor:
                     print(f"\n{'─'*60}")
                     print("🔄 예약 상태 변경 확인")
                     print(f"{'─'*60}")
-                    self.update_existing_bookings(current_bookings)
                 else:
                     # 새 예약 없을 때는 간단한 로그만
                     if cycle_count % 6 == 0:  # 1분마다 (10초 * 6)
                         print(f"[{current_time.strftime('%H:%M:%S')}] ⏳ 대기 중... (예약: {len(current_bookings)}건)")
+                        # 새 예약 없을 때만 상태 동기화(스냅샷 신뢰 가능)
+                        self.update_existing_bookings(current_bookings)
                 
                 # ★ 4. 입금 확인 (새 예약이 있을 때만 상세 로그)
                 if new_bookings:
@@ -273,6 +258,11 @@ class ReservationMonitor:
         새 예약 처리
         """
         for booking in new_bookings:
+            # 테스트 박수민,하건수
+            allowed = self._is_allowed_customer(booking.get("customer_name"))
+            if not allowed:
+                print(f"      🛡️ 안전모드: '{booking.get('customer_name')}' 는 테스트 대상 아님 → 확정/취소/문자 동작 스킵")
+
             try:
                 print(f"\n   📝 새 예약 처리: {booking['customer_name']} | {booking['room_name']}")
                 print(f"      - 네이버 ID: {booking['naver_booking_id']}")
@@ -287,18 +277,29 @@ class ReservationMonitor:
                     reason = conflict_result['message']  # ✅ 충돌 사유 그대로 사용
                     # 충돌로 인한 취소
                     print(f"      ❌ 충돌로 인한 취소: {conflict_result['message']}")
-                    
+                    #### 테스트 박수민, 하건수
+                    # DB에는 저장(취소로)만 해두고,
+                    reservation = self.save_booking_to_db(booking, status='취소')
+
+                    if allowed:
+                        if not self.dry_run:
+                            self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
+                        else:
+                            print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
+                        self.sms_sender.send_cancel_message(reservation, reason)
+                    else:
+                        print("      🛡️ 안전모드: 네이버 취소/문자 스킵")
+                        continue
                     # 네이버 취소
                     if not self.dry_run:
                         self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
                     else:
                         print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
                     
-                    # 취소 문자
-                    self.sms_sender.send_cancel_message_for_new_booking(booking, conflict_result['message'])
-                    
                     # DB에는 저장하되 취소 상태로
-                    self.save_booking_to_db(booking, status='취소')
+                    reservation = self.save_booking_to_db(booking, status='취소')
+                    # 취소 문자
+                    self.sms_sender.send_cancel_message(reservation, conflict_result['message'])
                     continue
                 
                 # 2. DB 저장 (네이버에서 가져온 상태 그대로 저장)
@@ -325,6 +326,12 @@ class ReservationMonitor:
         """
         try:
             print(f"      💳 일반 예약 처리")
+            # 테스트 박수민, 하건수
+            allowed = self._is_allowed_customer(reservation.customer_name)
+            if not allowed:
+                print(f"      🛡️ 안전모드: '{reservation.customer_name}' 계좌문자/클릭 스킵")
+                return
+            
             # 1. 계좌 안내 문자 발송 (Reservation 객체 기준)
             self.sms_sender.send_account_message(reservation)
             
@@ -340,111 +347,44 @@ class ReservationMonitor:
     
     def handle_coupon_booking(self, reservation, booking):
         """
-        쿠폰 예약 처리
-        
-        - 쿠폰 고객 잔여 시간 확인
-        - 잔여 시간 충분하면 즉시 확정
-        - 부족하면 취소
+        쿠폰 예약 처리 (쿠폰 로직은 CouponManager로 통일)
+        - check_balance로 가능/불가 + 사유 획득
+        - 가능하면 confirm_and_deduct로 확정/차감/이력/DB업데이트까지 일괄 처리
+        - 불가면 _cancel_coupon_booking로 취소
         """
+        allowed = self._is_allowed_customer(reservation.customer_name)
+        if not allowed:
+            print(f"      🛡️ 안전모드: '{reservation.customer_name}' 쿠폰 확정/취소/문자 스킵 (DB 기록만)")
+            return
         print(f"      🎫 쿠폰 예약 처리 시작")
 
-        # 1. 쿠폰 고객 조회
-        try:
-            coupon_customer = CouponCustomer.objects.get(
-                phone_number=booking['phone_number']
-            )
-        except CouponCustomer.DoesNotExist:
-            print(f"      ❌ 쿠폰 고객 정보 없음")
-            # 취소 처리
-            self._cancel_coupon_booking(reservation, "쿠폰 고객 정보 없음")
-            return
-        
-        # ✅ (추가) 쿠폰 메타 정보가 없으면 취소
-        if not coupon_customer.coupon_type or not coupon_customer.piano_category or not coupon_customer.coupon_expires_at:
-            print(f"      ❌ 쿠폰 정보 미등록(종류/수입국산/만료일 없음) → 취소")
-            self._cancel_coupon_booking(reservation, "쿠폰 정보 미등록")
+        ok, customer, reason = self.coupon_manager.check_balance(reservation)
+
+        if not ok:
+            print(f"      ❌ 쿠폰 처리 불가 → 취소 ({reason})")
+            self._cancel_coupon_booking(reservation, reason)
             return
 
-        # ✅ (추가) 만료 체크 (만료면 DB 상태 '만료'로 갱신 후 취소)
-        coupon_customer.refresh_expiry_status(today=timezone.localdate())
-        if coupon_customer.coupon_status == "만료":
-            print(f"      ❌ 쿠폰 만료 → 취소")
-            self._cancel_coupon_booking(reservation, "쿠폰 유효기간 만료")
-            return
+        print("      ✅ 쿠폰 조건 통과 → 즉시 확정/차감 진행")
+        success = self.coupon_manager.confirm_and_deduct(
+            reservation=reservation,
+            customer=customer,
+            scraper=self.scraper
+        )
 
-        # ✅ (추가) 룸 수입/국산 매칭 체크
-        room_category = self.get_room_category(booking.get('room_name'))
-        if room_category and coupon_customer.piano_category != room_category:
-            print(f"      ❌ 쿠폰({coupon_customer.piano_category}) vs 룸({room_category}) 불일치 → 취소")
-            self._cancel_coupon_booking(reservation, "쿠폰 종류(수입/국산) 불일치")
-            return
-        
-        # 2. 예약 시간 계산 (분)
-        from datetime import datetime, timedelta
-        start_dt = datetime.combine(booking['reservation_date'], booking['start_time'])
-        end_dt = datetime.combine(booking['reservation_date'], booking['end_time'])
-        booking_minutes = int((end_dt - start_dt).total_seconds() / 60)
-        
-        print(f"      - 예약 시간: {booking_minutes}분")
-        print(f"      - 잔여 시간: {coupon_customer.remaining_time}분")
-        
-        # 3. 잔여 시간 확인
-        if coupon_customer.remaining_time >= booking_minutes:
-            # 충분함 → 즉시 확정
-            print(f"      ✅ 잔여 시간 충분 → 즉시 확정")
-            self._confirm_coupon_booking(reservation, coupon_customer, booking_minutes)
+        if success:
+            print("      ✅ 쿠폰 예약 확정/차감 완료")
         else:
-            # 부족함 → 취소
-            print(f"      ❌ 잔여 시간 부족 → 취소")
-            self._cancel_coupon_booking(reservation, "잔여 시간 부족")
-
-    def _confirm_coupon_booking(self, reservation, coupon_customer, booking_minutes):
-        """쿠폰 예약 확정"""
-        try:
-            # 네이버 상에서도 확정 (확정대기 탭 기준)
-            if not self.dry_run:
-                self.scraper.confirm_in_pending_tab(reservation.naver_booking_id)
-            else:
-                print(f"      [DRY_RUN] 네이버 확정 시뮬레이션")
-            
-            # DB 상태 변경
-            reservation.reservation_status = '확정'
-            reservation.save()
-            
-            # 쿠폰 잔여 시간 차감
-            coupon_customer.remaining_time -= booking_minutes
-            coupon_customer.save()
-            
-            # 쿠폰 사용 이력 생성
-            from pianos.models import CouponHistory
-            CouponHistory.objects.create(
-                customer=coupon_customer,
-                reservation=reservation,
-                customer_name=reservation.customer_name,
-                room_name=reservation.room_name,
-                transaction_date=reservation.reservation_date,
-                start_time=reservation.start_time,
-                end_time=reservation.end_time,
-                remaining_time=coupon_customer.remaining_time,
-                used_or_charged_time=-booking_minutes,
-                transaction_type='사용'
-            )
-        
-            print(f"      ✅ 쿠폰 예약 확정 완료")
-            print(f"         - 차감: {booking_minutes}분")
-            print(f"         - 잔여: {coupon_customer.remaining_time}분")
-            
-        except Exception as e:
-            print(f"      ❌ 쿠폰 확정 오류: {e}")
-            import traceback
-            traceback.print_exc()
+            # 확정 실패 시 안전하게 취소 처리
+            print("      ❌ 쿠폰 확정 실패 → 취소")
+            self._cancel_coupon_booking(reservation, "쿠폰 확정 처리 실패")
     
     def _cancel_coupon_booking(self, reservation, reason):
         """쿠폰 예약 취소 처리"""
         try:
             # 네이버 취소
             if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id)
+                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
             else:
                 print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
             
@@ -453,9 +393,7 @@ class ReservationMonitor:
             reservation.save()
             
             # 취소 문자
-            self.sms_sender.send_cancel_message_for_coupon_booking(
-                reservation, reason
-            )
+            self.sms_sender.send_cancel_message(reservation, reason)
             
             print(f"      ✅ 쿠폰 예약 취소 완료 ({reason})")
             
@@ -512,6 +450,10 @@ class ReservationMonitor:
                 
                 # 상태가 다르면 업데이트
                 if reservation.reservation_status != naver_status:
+                    # ✅ 역방향 방지: 확정/취소를 신청으로 되돌리지 않음
+                    if reservation.reservation_status in ('확정', '취소') and naver_status == '신청':
+                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({reservation.reservation_status} -> 신청) 스킵")
+                        continue
                     print(f"   🔁 상태 변경 감지: {reservation.naver_booking_id}")
                     print(f"      - {reservation.reservation_status} → {naver_status}")
                     
