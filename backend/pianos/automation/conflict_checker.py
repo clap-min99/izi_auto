@@ -21,6 +21,11 @@ from pianos.automation.sms_sender import SMSSender
 
 class ConflictChecker:
     """예약 충돌 확인 및 처리"""
+    # 테스트 박수민, 하건수
+    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수"}
+
+    def _is_allowed_customer(self, name: str) -> bool:
+        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
     
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -163,32 +168,28 @@ class ConflictChecker:
         2. 입금 후: 취소+환불 예정 문자 발송
         """
         print(f"      🚫 예약 취소: {reservation.customer_name} ({reason})")
+
+        # ✅ 안전장치: 테스트 대상만 실제 취소/문자(테스트 박수민, 하건수)
+        if not self._is_allowed_customer(reservation.customer_name):
+            print(f"      🛡️ 안전모드: '{reservation.customer_name}' 취소/문자 스킵")
+            return
         
         try:
-            # 1. 입금 확인
-            has_payment = self._check_payment(reservation)
-            
             # 2. 네이버 취소
             if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id)
+                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
             else:
                 print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
             
             # 3. 문자 발송 & DB 업데이트
             with transaction.atomic():
-                if has_payment:
-                    # 입금 후: 취소+환불 예정 문자
-                    self.sms_sender.send_cancel_with_refund_message(reservation, reason)
-                    # ★ 거래 내역도 취소 상태로 변경
-                    self._mark_transaction_as_cancelled(reservation)
-                else:
-                    # 입금 전: 취소 문자만
-                    self.sms_sender.send_cancel_message(reservation, reason)
+                self.sms_sender.send_cancel_message(reservation, reason)
+                self._mark_transaction_as_cancelled(reservation)
                 
                 # 예약 상태 업데이트
                 reservation.reservation_status = '취소'
-                reservation.save()
-            
+                reservation.save(update_fields=['reservation_status', 'updated_at'])
+
         except Exception as e:
             print(f"      ❌ 취소 처리 오류: {e}")
             import traceback

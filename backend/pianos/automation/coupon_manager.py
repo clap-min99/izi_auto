@@ -39,25 +39,25 @@ class CouponManager:
 
             # ✅ 쿠폰 메타 정보 없으면 불가
             if not customer.coupon_type or not customer.piano_category or not customer.coupon_expires_at:
-                return False, customer
+                return False, customer, "쿠폰 정보 미등록"
 
             # ✅ 만료 갱신
-            customer.refresh_expire_status(today=timezone.localdate())
+            customer.refresh_expiry_status(today=timezone.localdate())
             if customer.coupon_status == "만료":
-                return False, customer
+                return False, customer, "쿠폰 유효기간 만료"
 
             # ✅ 룸 매칭 체크
             room_category = get_room_category(getattr(reservation, "room_name", ""))
             if room_category and customer.piano_category != room_category:
-                return False, customer
+                return False, customer, "쿠폰 종류(수입/국산) 불일치"
 
             duration = reservation.get_duration_minutes()
             if customer.remaining_time >= duration:
-                return True, customer
-            return False, customer
+                return True, customer, ""
+            return False, customer, "잔여 시간 부족"
 
         except CouponCustomer.DoesNotExist:
-            return False, None
+            return False, None, "쿠폰 고객 정보 없음"
     
     @transaction.atomic
     def confirm_and_deduct(self, reservation, customer, scraper):
@@ -73,11 +73,11 @@ class CouponManager:
             success: bool
         """
         try:
-            # 1. 네이버 확정 버튼 클릭 (⭐ DRY_RUN이면 시뮬레이션만)
-            success = scraper.confirm_booking(reservation.naver_booking_id)
-            
-            if not success:
-                return False
+            # 1. 네이버 확정 버튼 클릭
+            if not self.dry_run:
+                scraper.confirm_in_pending_tab(reservation.naver_booking_id)
+            else:
+                print("   [DRY_RUN] 네이버 확정 시뮬레이션")
             
             # 2. 쿠폰 차감 (⭐ DB는 항상 업데이트)
             duration = reservation.get_duration_minutes()
@@ -109,7 +109,7 @@ class CouponManager:
             # 4. DB 상태 업데이트 (⭐ DB는 항상 업데이트)
             reservation.reservation_status = '확정'
             reservation.complete_sms_status = '전송완료'
-            reservation.save()
+            reservation.save(update_fields=['reservation_status', 'complete_sms_status', 'updated_at'])
             
             print(f"   💾 예약 상태 업데이트 완료 (확정)")
             
