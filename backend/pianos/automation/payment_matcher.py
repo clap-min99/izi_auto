@@ -21,6 +21,11 @@ from pianos.automation.sms_sender import SMSSender
 
 class PaymentMatcher:
     """입금 확인 및 예약 매칭"""
+    # 테스트 박수민, 하건수
+    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수"}
+
+    def _is_allowed_customer(self, name: str) -> bool:
+        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
     
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -211,11 +216,16 @@ class PaymentMatcher:
         print(f"      🔄 예약 확정 처리 중...")
         
         confirmed_count = 0
+        confirmed_reservations = []
         
         try:
             with transaction.atomic():
                 # 1. 모든 예약 확정
                 for res in reservations:
+                    # 테스트 박수민, 하건수    
+                    if not self._is_allowed_customer(res.customer_name):
+                        print(f"      🛡️ 안전모드: '{res.customer_name}' 확정 처리 스킵")
+                        continue
                     # 네이버 확정 버튼 클릭
                     if not self.dry_run:
                         success = self.scraper.confirm_in_pending_tab(res.naver_booking_id)
@@ -231,16 +241,19 @@ class PaymentMatcher:
                     # 예약 상태 업데이트
                     res.reservation_status = '확정'
                     res.complete_sms_status = '전송완료'
-                    res.save()
-                    
+                    res.save(update_fields=['reservation_status', 'complete_sms_status', 'updated_at'])
+
+                    confirmed_reservations.append(res)
                     confirmed_count += 1
+                    # 예약 확정 처리 루프 안에서, 확정 성공한 res마다 호출
+                    self._cancel_overlapping_pending_reservations(winner=res, reason="같은 시간대 선입금자 우선")
                 
                 # 2. 거래 내역 상태 업데이트 (★ 확정완료)
                 for trans in transactions:
                     trans.match_status = '확정완료'  # ★
-                    trans.save()
+                    trans.save(update_fields=['match_status', 'updated_at'])
                     # ManyToMany 관계 설정
-                    trans.matched_reservations.set(reservations)
+                    trans.matched_reservations.set(confirmed_reservations)
             
             print(f"      ✅ 입금 확인 처리 완료!")
             print(f"         - 확정 예약: {confirmed_count}건")
@@ -253,6 +266,45 @@ class PaymentMatcher:
             import traceback
             traceback.print_exc()
             return 0
+    
+    def _is_overlap(self, a_start, a_end, b_start, b_end) -> bool:
+        return a_start < b_end and b_start < a_end
+    
+    def _cancel_overlapping_pending_reservations(self, winner: Reservation, reason: str):
+        """
+        winner(확정된 예약)와 시간이 겹치는 '신청' 상태 예약들을 모두 취소한다.
+        - 입금/미입금 상관없이 동일 취소문자
+        - 입금 내역 있으면 match_status='취소'로 표시
+        """
+        # ✅ 안전모드: winner가 허용된 고객이 아닐 때는 아무 것도 하지 않음
+        if not self._is_allowed_customer(winner.customer_name):
+            return
+
+        candidates = Reservation.objects.filter(
+            room_name=winner.room_name,
+            reservation_date=winner.reservation_date,
+            reservation_status='신청',
+            is_coupon=False
+        ).exclude(id=winner.id)
+
+        losers = []
+        for r in candidates:
+            if self._is_overlap(winner.start_time, winner.end_time, r.start_time, r.end_time):
+                losers.append(r)
+
+        if not losers:
+            return
+
+        print(f"      🧹 확정 후 중복 신청 예약 취소: {len(losers)}건")
+
+        for loser in losers:
+            if not self._is_allowed_customer(loser.customer_name):
+                print(f"         🛡️ 안전모드: '{loser.customer_name}' 취소 스킵")
+                continue
+
+            trans = self._get_earliest_payment(loser)  # 있으면 취소표시
+            self._cancel_loser(reservation=loser, reason=reason, trans=trans)
+
     
     def handle_first_payment_wins(self):
         """
@@ -280,57 +332,79 @@ class PaymentMatcher:
     
     def _find_conflicting_groups(self):
         """
-        같은 시간대에 여러 신청이 있는 그룹 찾기
-        
-        Returns:
-            [
-                {
-                    'room_name': 'Room1',
-                    'date': date,
-                    'time_range': (start, end),
-                    'reservations': [<Reservation>, <Reservation>]
-                },
-                ...
-            ]
+        겹치는(Overlap) 시간대에 여러 신청이 있는 그룹 찾기
+        - room_name + reservation_date 단위로 모아서
+        - start_time 기준 정렬 후, 겹치는 구간을 하나의 클러스터로 묶는다.
         """
-        # 신청 상태인 일반 예약들
         pending_reservations = Reservation.objects.filter(
             reservation_status='신청',
             is_coupon=False
-        ).order_by('room_name', 'reservation_date', 'start_time')
-        
-        # 시간대별로 그룹화
-        groups_dict = defaultdict(list)
-        
+        ).order_by('room_name', 'reservation_date', 'start_time', 'end_time')
+
+        # (room, date) 단위로 묶기
+        by_room_date = defaultdict(list)
         for res in pending_reservations:
-            key = (res.room_name, res.reservation_date, res.start_time, res.end_time)
-            groups_dict[key].append(res)
-        
-        # 2개 이상인 그룹만 반환
+            by_room_date[(res.room_name, res.reservation_date)].append(res)
+
         conflicting_groups = []
-        for (room, date, start, end), reservations in groups_dict.items():
-            if len(reservations) >= 2:
+
+        for (room, date), reservations in by_room_date.items():
+            # start_time 기준 정렬된 상태라고 가정(위 order_by)
+            if len(reservations) < 2:
+                continue
+
+            cluster = [reservations[0]]
+            cluster_start = reservations[0].start_time
+            cluster_end = reservations[0].end_time
+
+            for res in reservations[1:]:
+                # overlap 조건: res.start < cluster_end
+                if res.start_time < cluster_end:
+                    cluster.append(res)
+                    # 클러스터 끝 시간은 가장 늦은 end로 확장
+                    if res.end_time > cluster_end:
+                        cluster_end = res.end_time
+                else:
+                    # 클러스터 종료
+                    if len(cluster) >= 2:
+                        conflicting_groups.append({
+                            'room_name': room,
+                            'date': date,
+                            'time_range': (cluster_start, cluster_end),
+                            'reservations': cluster
+                        })
+                    # 새 클러스터 시작
+                    cluster = [res]
+                    cluster_start = res.start_time
+                    cluster_end = res.end_time
+
+            # 마지막 클러스터 처리
+            if len(cluster) >= 2:
                 conflicting_groups.append({
                     'room_name': room,
                     'date': date,
-                    'time_range': (start, end),
-                    'reservations': reservations
+                    'time_range': (cluster_start, cluster_end),
+                    'reservations': cluster
                 })
-        
+
         return conflicting_groups
     
     def _process_conflicting_group(self, group):
         """
-        충돌 그룹 처리: 선입금자만 확정
+        충돌 그룹 처리: "입금자 있으면 선입금자만 확정", 나머지는 전부 취소(문자 동일)
+        정책:
+        - 입금자 0명 => 아무 처리 안 함(유지)
+        - loser는 입금/미입금 상관없이 동일한 취소문자
+        - 단, 입금한 loser는 거래내역 match_status='취소'로 표시
         """
         room = group['room_name']
         time_range = group['time_range']
         reservations = group['reservations']
-        
+
         print(f"\n   🔍 충돌 그룹: {room} | {time_range[0]}~{time_range[1]}")
         print(f"      - 신청 예약: {len(reservations)}건")
-        
-        # 1. 각 예약의 입금 상태 확인
+
+        # 1) 각 예약의 입금 상태 확인 (확정전 거래만)
         payment_info = []
         for res in reservations:
             trans = self._get_earliest_payment(res)
@@ -339,35 +413,37 @@ class PaymentMatcher:
                 'transaction': trans,
                 'payment_time': (trans.transaction_date, trans.transaction_time) if trans else None
             })
-        
-        # 2. 입금 시간 순 정렬
-        payment_info.sort(key=lambda x: (
-            x['payment_time'] is None,  # None은 마지막으로
-            x['payment_time'] or (datetime.max.date(), datetime.max.time())
-        ))
-        
-        # 3. 선입금자 확정
-        first_payer = payment_info[0]
-        if first_payer['transaction']:
-            print(f"      🏆 선입금자: {first_payer['reservation'].customer_name}")
-            self._confirm_reservations(
-                [first_payer['reservation']], 
-                [first_payer['transaction']]
-            )
-        
-        # 4. 나머지 처리
-        for info in payment_info[1:]:
+
+        # ✅ 입금자 0명 => 유지
+        paid_list = [x for x in payment_info if x['transaction'] is not None]
+        if not paid_list:
+            print("      ℹ️ 입금자 없음 → 그룹 유지(확정/취소 없음)")
+            return
+
+        # 2) 선입금자(가장 빠른 payment_time) 선정
+        paid_list.sort(key=lambda x: x['payment_time'])
+        first_payer = paid_list[0]
+
+        winner_res = first_payer['reservation']
+        winner_tx = first_payer['transaction']
+
+        print(f"      🏆 선입금자: {winner_res.customer_name}")
+
+        # 3) winner 확정
+        self._confirm_reservations([winner_res], [winner_tx])
+
+        # 4) loser 전부 취소 (문자 동일), 입금한 loser는 거래만 '취소' 표시
+        reason = "같은 시간대 선입금자 우선"
+        for info in payment_info:
             res = info['reservation']
             trans = info['transaction']
-            
-            if trans:
-                # 후입금자: 취소+환불 예정
-                print(f"      ❌ 후입금자 취소: {res.customer_name}")
-                self._cancel_with_refund(res, trans)
-            else:
-                # 미입금자: 취소만
-                print(f"      ❌ 미입금자 취소: {res.customer_name}")
-                self._cancel_without_refund(res)
+
+            if res.id == winner_res.id:
+                continue
+
+            print(f"      ❌ 자동 취소: {res.customer_name} (입금여부: {'입금' if trans else '미입금'})")
+            self._cancel_loser(reservation=res, reason=reason, trans=trans)
+
     
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
@@ -379,58 +455,40 @@ class PaymentMatcher:
             match_status='확정전'
         ).order_by('transaction_date', 'transaction_time').first()
     
-    def _cancel_with_refund(self, reservation, trans):
-        """후입금자 취소 (통합 메시지)"""
+    def _cancel_loser(self, reservation, reason, trans=None):
+        """
+        loser 취소 처리 (문자 통합)
+        - 입금/미입금 상관없이 같은 취소 문자
+        - 입금한 loser면 거래내역 match_status='취소'로 표시
+        """
+        # 테스트 박수민, 하건수
+        if not self._is_allowed_customer(reservation.customer_name):
+            print(f"         🛡️ 안전모드: '{reservation.customer_name}' 취소 처리 스킵")
+            return
         try:
-            # 네이버 취소
+            # 네이버 취소 (사유 입력 가능하면 reason 전달)
             if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id)
+                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
             else:
                 print(f"         [DRY_RUN] 네이버 취소 시뮬레이션")
-            
-            # 취소 문자 (환불 안내 포함)
-            self.sms_sender.send_cancel_message(
-                reservation, 
-                "같은 시간대 선입금자 우선"
-            )
-            
-            # DB 업데이트
+
+            # ✅ 취소 문자(통합)
+            self.sms_sender.send_cancel_message(reservation, reason)
+
+            # ✅ DB 업데이트 (원자적으로)
             with transaction.atomic():
                 reservation.reservation_status = '취소'
-                reservation.save()
-                
-                # ★ 거래 내역 취소 상태로
-                trans.match_status = '취소'
-                trans.save()
-            
+                reservation.save(update_fields=['reservation_status', 'updated_at'])
+
+                if trans:
+                    trans.match_status = '취소'
+                    trans.save(update_fields=['match_status', 'updated_at'])
+
         except Exception as e:
             print(f"         ❌ 취소 처리 오류: {e}")
             import traceback
             traceback.print_exc()
-    
-    def _cancel_without_refund(self, reservation):
-        """미입금자 취소 문자"""
-        try:
-            # 네이버 취소
-            if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id)
-            else:
-                print(f"         [DRY_RUN] 네이버 취소 시뮬레이션")
-            
-            # 취소 문자
-            self.sms_sender.send_cancel_message(
-                reservation,
-                "같은 시간대 선입금자 우선"
-            )
-            
-            # DB 업데이트
-            reservation.reservation_status = '취소'
-            reservation.save()
-            
-        except Exception as e:
-            print(f"         ❌ 취소 처리 오류: {e}")
-            import traceback
-            traceback.print_exc()
+
 
 
 def main():

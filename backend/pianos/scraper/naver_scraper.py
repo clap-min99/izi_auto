@@ -282,57 +282,6 @@ class NaverPlaceScraper:
             'error': error_count,
         }
     
-    # def get_pending_count(self):
-    #     """
-    #     현재 화면에서 '신청' 상태인 예약(=확정대기)을 몇 건인지 세서 반환한다.
-    #     기본 예약리스트/확정대기 탭 둘 다 동작 가능.
-    #     """
-    #     try:
-    #         rows = self.driver.find_elements(
-    #             By.CLASS_NAME,
-    #             "BookingListView__contents-user__xNWR6"
-    #         )
-    #         count = 0
-    #         for row in rows:
-    #             try:
-    #                 status_el = row.find_element(
-    #                     By.CSS_SELECTOR,
-    #                     ".BookingListView__state__89OjA .label"
-    #                 )
-    #                 status = status_el.text.strip()
-    #                 if status == "신청":   # ← 확정대기 상태
-    #                     count += 1
-    #             except:
-    #                 continue
-
-    #         # 디버깅용 로그
-    #         if count > 0:
-    #             print(f"📌 현재 화면 '신청'(확정대기) 개수: {count}")
-    #         return count
-
-    #     except Exception as e:
-    #         print(f"⚠️ 확정대기 개수 읽기 실패: {e}")
-    #         return 0
-
-
-    # def click_pending_button(self):
-    #     """확정대기 버튼 클릭"""
-    #     try:
-    #         pending_btn = self.driver.find_element(
-    #             By.CSS_SELECTOR, 
-    #             'input[data-tst_confirm_pending]'
-    #         )
-            
-    #         pending_btn.click()
-    #         time.sleep(2)
-            
-    #         print("✅ 확정대기 탭 이동")
-    #         return True
-            
-    #     except Exception as e:
-    #         print(f"❌ 확정대기 버튼 클릭 실패: {e}")
-    #         return False
-    
     def confirm_in_pending_tab(self, naver_booking_id):
         """
         (이름 유지) 기본 예약 리스트에서 대상 클릭 → 사이드바에서 예약확정 2번 → 닫기 → 새로고침
