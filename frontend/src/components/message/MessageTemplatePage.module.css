@@ -1,0 +1,228 @@
+/* src/components/message/MessageTemplatePage.module.css */
+
+.container {
+  display: flex;
+  gap: 12px;
+  padding: 12px 18px;
+  height: calc(100vh - 140px); /* 헤더/탭바 높이에 맞게 필요시 조정 */
+  box-sizing: border-box;
+}
+
+.left {
+  width: 320px;
+  background: #f7f7f4;
+  border-radius: 4px;
+  padding: 12px;
+  overflow: auto;
+}
+
+.right {
+  flex: 1;
+  background: #f7f7f4;
+  border-radius: 4px;
+  padding: 12px 18px;
+  overflow: auto;
+}
+
+.leftHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.leftTitle {
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.templateList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.templateItem {
+  width: 100%;
+  text-align: left;
+  border: 1px solid #ddd;
+  background: #fff;
+  border-radius: 6px;
+  padding: 10px 10px;
+  cursor: pointer;
+}
+
+.templateItemActive {
+  background: #f0f0ee;
+}
+
+.itemTop {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 8px;
+}
+
+.itemTitle {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.itemCode {
+  margin-top: 4px;
+  font-size: 12px;
+  color: #666;
+}
+
+.badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid #ddd;
+}
+
+.badgeOn {
+  color: #0e9f6e;
+}
+
+.badgeOff {
+  color: #d11a2a;
+}
+
+.emptyBox {
+  padding: 12px;
+  background: #fff;
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+}
+
+.emptyRight {
+  padding: 12px;
+  background: #fff;
+  border: 1px dashed #ddd;
+  border-radius: 6px;
+  font-size: 13px;
+  color: #666;
+}
+
+.headerRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.pageTitle {
+  font-weight: 800;
+  font-size: 16px;
+}
+
+.subText {
+  font-size: 12px;
+  color: #666;
+  margin-top: 2px;
+}
+
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin: 8px 0 10px;
+}
+
+.chip {
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 6px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.textarea {
+  width: 100%;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 10px;
+  font-size: 14px;
+  box-sizing: border-box;
+  resize: vertical;
+  min-height: 220px;
+  background: #fff;
+}
+
+.actionRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-top: 10px;
+}
+
+.previewBox {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.previewInput {
+  width: 180px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 13px;
+  background: #fff;
+}
+
+.primaryButton {
+  border: 1px solid #ddd;
+  background: #0e9f6e;
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.secondaryButton {
+  border: 1px solid #ddd;
+  background: #fff;
+  padding: 8px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+}
+
+.primaryButton:disabled,
+.secondaryButton:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.previewResult {
+  margin-top: 12px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: #fff;
+  padding: 12px;
+}
+
+.previewTitle {
+  font-weight: 700;
+  margin-bottom: 6px;
+  font-size: 13px;
+}
+
+.previewPre {
+  margin: 0;
+  white-space: pre-wrap;
+  font-size: 13px;
+}

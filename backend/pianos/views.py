@@ -11,14 +11,16 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
     CouponCustomerDetailSerializer,
     CouponHistorySerializer,
     CouponCustomerRegisterOrChargeSerializer,
+    MessageTemplateSerializer,
 )
+from .message_templates import DEFAULT_TEMPLATES, render_template
 
 
 class ReservationViewSet(viewsets.ModelViewSet):
@@ -383,3 +385,78 @@ def delete_test_transactions(request):
             },
             status=status.HTTP_500_INTERNAL_SERVER_ERROR
         )
+
+class MessageTemplateViewSet(viewsets.ModelViewSet):
+    queryset = MessageTemplate.objects.all().order_by("id")
+    serializer_class = MessageTemplateSerializer
+
+    # PATCH로 content/is_active 수정 가능
+    def partial_update(self, request, *args, **kwargs):
+        obj = self.get_object()
+        # code는 수정 불가
+        data = request.data.copy()
+        data.pop("code", None)
+        serializer = self.get_serializer(obj, data=data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    @action(detail=False, methods=["post"], url_path="seed")
+    def seed(self, request):
+        """
+        코드가 없으면 기본 템플릿을 생성합니다.
+        (이미 있으면 content는 건드리지 않는 방식)
+        """
+        created = 0
+        with transaction.atomic():
+            for code, meta in DEFAULT_TEMPLATES.items():
+                _, was_created = MessageTemplate.objects.get_or_create(
+                    code=code,
+                    defaults={
+                        "title": meta["title"],
+                        "content": meta["content"],
+                        "is_active": True,
+                    },
+                )
+                if was_created:
+                    created += 1
+        return Response({"created": created}, status=status.HTTP_200_OK)
+
+    @action(detail=False, methods=["post"], url_path="preview")
+    def preview(self, request):
+        """
+        code + reservation_id(선택)로 실제 치환된 문구를 반환합니다.
+        """
+        code = request.data.get("code")
+        reservation_id = request.data.get("reservation_id")
+        extra_ctx = request.data.get("context") or {}
+
+        if not code:
+            return Response({"detail": "code is required"}, status=400)
+
+        tpl = MessageTemplate.objects.filter(code=code, is_active=True).first()
+        # DB에 없거나 비활성일 때는 기본값 fallback
+        base = DEFAULT_TEMPLATES.get(code, {})
+        content = (tpl.content if tpl else base.get("content", ""))
+
+        ctx = {
+            "studio": "이지피아노",
+        }
+
+        if reservation_id:
+            r = Reservation.objects.filter(id=reservation_id).first()
+            if r:
+                ctx.update({
+                    "customer_name": r.customer_name,
+                    "room_name": r.room_name,
+                    "date": str(r.reservation_date),
+                    "start_time": str(r.start_time)[:5],
+                    "end_time": str(r.end_time)[:5],
+                    "price": getattr(r, "price", ""),
+                })
+
+        if isinstance(extra_ctx, dict):
+            ctx.update(extra_ctx)
+
+        rendered = render_template(content, ctx)
+        return Response({"rendered": rendered}, status=200)
