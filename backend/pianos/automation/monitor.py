@@ -144,11 +144,12 @@ class ReservationMonitor:
                     print(f"\n{'─'*60}")
                     print("🔄 예약 상태 변경 확인")
                     print(f"{'─'*60}")
-                    self.update_existing_bookings(current_bookings)
                 else:
                     # 새 예약 없을 때는 간단한 로그만
                     if cycle_count % 6 == 0:  # 1분마다 (10초 * 6)
                         print(f"[{current_time.strftime('%H:%M:%S')}] ⏳ 대기 중... (예약: {len(current_bookings)}건)")
+                        # 새 예약 없을 때만 상태 동기화(스냅샷 신뢰 가능)
+                        self.update_existing_bookings(current_bookings)
                 
                 # ★ 4. 입금 확인 (새 예약이 있을 때만 상세 로그)
                 if new_bookings:
@@ -449,6 +450,10 @@ class ReservationMonitor:
                 
                 # 상태가 다르면 업데이트
                 if reservation.reservation_status != naver_status:
+                    # ✅ 역방향 방지: 확정/취소를 신청으로 되돌리지 않음
+                    if reservation.reservation_status in ('확정', '취소') and naver_status == '신청':
+                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({reservation.reservation_status} -> 신청) 스킵")
+                        continue
                     print(f"   🔁 상태 변경 감지: {reservation.naver_booking_id}")
                     print(f"      - {reservation.reservation_status} → {naver_status}")
                     

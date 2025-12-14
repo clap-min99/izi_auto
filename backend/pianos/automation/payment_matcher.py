@@ -216,6 +216,7 @@ class PaymentMatcher:
         print(f"      🔄 예약 확정 처리 중...")
         
         confirmed_count = 0
+        confirmed_reservations = []
         
         try:
             with transaction.atomic():
@@ -241,15 +242,18 @@ class PaymentMatcher:
                     res.reservation_status = '확정'
                     res.complete_sms_status = '전송완료'
                     res.save(update_fields=['reservation_status', 'complete_sms_status', 'updated_at'])
-                    
+
+                    confirmed_reservations.append(res)
                     confirmed_count += 1
+                    # 예약 확정 처리 루프 안에서, 확정 성공한 res마다 호출
+                    self._cancel_overlapping_pending_reservations(winner=res, reason="같은 시간대 선입금자 우선")
                 
                 # 2. 거래 내역 상태 업데이트 (★ 확정완료)
                 for trans in transactions:
                     trans.match_status = '확정완료'  # ★
                     trans.save(update_fields=['match_status', 'updated_at'])
                     # ManyToMany 관계 설정
-                    trans.matched_reservations.set(reservations)
+                    trans.matched_reservations.set(confirmed_reservations)
             
             print(f"      ✅ 입금 확인 처리 완료!")
             print(f"         - 확정 예약: {confirmed_count}건")
@@ -262,6 +266,45 @@ class PaymentMatcher:
             import traceback
             traceback.print_exc()
             return 0
+    
+    def _is_overlap(self, a_start, a_end, b_start, b_end) -> bool:
+        return a_start < b_end and b_start < a_end
+    
+    def _cancel_overlapping_pending_reservations(self, winner: Reservation, reason: str):
+        """
+        winner(확정된 예약)와 시간이 겹치는 '신청' 상태 예약들을 모두 취소한다.
+        - 입금/미입금 상관없이 동일 취소문자
+        - 입금 내역 있으면 match_status='취소'로 표시
+        """
+        # ✅ 안전모드: winner가 허용된 고객이 아닐 때는 아무 것도 하지 않음
+        if not self._is_allowed_customer(winner.customer_name):
+            return
+
+        candidates = Reservation.objects.filter(
+            room_name=winner.room_name,
+            reservation_date=winner.reservation_date,
+            reservation_status='신청',
+            is_coupon=False
+        ).exclude(id=winner.id)
+
+        losers = []
+        for r in candidates:
+            if self._is_overlap(winner.start_time, winner.end_time, r.start_time, r.end_time):
+                losers.append(r)
+
+        if not losers:
+            return
+
+        print(f"      🧹 확정 후 중복 신청 예약 취소: {len(losers)}건")
+
+        for loser in losers:
+            if not self._is_allowed_customer(loser.customer_name):
+                print(f"         🛡️ 안전모드: '{loser.customer_name}' 취소 스킵")
+                continue
+
+            trans = self._get_earliest_payment(loser)  # 있으면 취소표시
+            self._cancel_loser(reservation=loser, reason=reason, trans=trans)
+
     
     def handle_first_payment_wins(self):
         """
