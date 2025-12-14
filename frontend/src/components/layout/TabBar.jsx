@@ -6,6 +6,7 @@ function TabBar({ activeTab, onChange, rightContent }) {
   const TABS = [
     { id: 'reservation', label: '예약 관리' },
     { id: 'prepaid', label: '쿠폰 고객' },
+    { id: 'deposit', label: '계좌 확인' },
   ];
 
   return (
