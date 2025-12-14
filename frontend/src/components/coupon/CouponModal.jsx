@@ -1,6 +1,8 @@
 import React, { useEffect, useState } from 'react';
 import styles from './CouponModal.module.css';
 import { createOrChargeCouponCustomer } from '../api/couponCustomerApi';
+import { formatPhone } from '../utils/phoneFormat';
+
 
 const COUPON_OPTIONS = [
   { label: '10시간', value: 10, minutes: 600 },
@@ -34,7 +36,16 @@ function CouponModal({ open, onClose, onSuccess }) {
   if (!open) return null;
 
   const handleChange = (e) => {
-    const { name, value } = e.target;
+  const { name, value } = e.target;
+
+    if (name === 'phone_number') {
+      setForm((prev) => ({
+        ...prev,
+        phone_number: formatPhone(value),
+      }));
+      return;
+    }
+
     setForm((prev) => ({ ...prev, [name]: value }));
   };
 
