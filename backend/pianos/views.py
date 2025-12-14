@@ -3,7 +3,7 @@
 from rest_framework import viewsets, status
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
-from rest_framework.filters import SearchFilter
+from rest_framework.filters import SearchFilter, OrderingFilter
 from dateutil.relativedelta import relativedelta
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -24,11 +24,16 @@ from .serializers import (
 class ReservationViewSet(viewsets.ModelViewSet):
     """예약 관리 ViewSet"""
     
-    queryset = Reservation.objects.all().order_by('-reservation_date', '-start_time')
+    queryset = Reservation.objects.all()
     serializer_class = ReservationSerializer
-    filter_backends = [SearchFilter]
+    filter_backends = [SearchFilter, OrderingFilter]
     search_fields = ['customer_name', 'phone_number']
 
+    # ✅ 기본 정렬(요청에 ordering 없을 때)
+    ordering = ['-created_at']
+
+    # ✅ 프론트에서 허용할 정렬 필드
+    ordering_fields = ['created_at', 'reservation_date', 'start_time']
 
 class CouponCustomerViewSet(viewsets.ModelViewSet):
     """쿠폰 고객 관리 ViewSet"""

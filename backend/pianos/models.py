@@ -197,7 +197,7 @@ class Reservation(models.Model):
         db_table = 'reservations'
         verbose_name = '예약'
         verbose_name_plural = '예약 목록'
-        ordering = ['-reservation_date', '-start_time']
+        ordering = ['-created_at', '-reservation_date', '-start_time']
 
     def __str__(self):
         return f"{self.customer_name} - {self.room_name} ({self.reservation_date})"
