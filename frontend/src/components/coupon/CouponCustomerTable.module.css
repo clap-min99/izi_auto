@@ -1,6 +1,6 @@
 .wrapper {
   flex: 1;
-  background: #f6f6ee;
+  background: #f7f7f4;
   border-radius: 4px;
   padding: 12px 18px;
   overflow: auto;
@@ -43,10 +43,6 @@
 /* 색만 살짝 다르게 */
 .detailButton {
   background: #d7e2d6;
-}
-
-.editButton {
-  background: #f2e4c7;
 }
 
 .deleteButton {
