@@ -48,3 +48,34 @@
 .deleteButton {
   background: #f4c7c3;
 }
+
+/* 편집 중인 행 강조 */
+.editingRow {
+  background: rgba(0, 0, 0, 0.04);
+}
+
+/* 저장 중(선택) */
+.savingRow {
+  opacity: 0.75;
+}
+
+/* 인라인 편집 input */
+.editInput {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 8px 10px;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  border-radius: 8px;
+  outline: none;
+  background: white;
+}
+
+.editInput:focus {
+  border-color: rgba(0, 0, 0, 0.35);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.08);
+}
+
+.editInput:disabled {
+  background: rgba(0, 0, 0, 0.04);
+  cursor: not-allowed;
+}

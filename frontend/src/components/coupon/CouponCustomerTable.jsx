@@ -16,6 +16,14 @@ function formatYYMMDD(dateStr) {
   return `${yy}-${mm}-${dd}`;
 }
 
+function formatPhone(value) {
+  const digits = (value || '').replace(/\D/g, '').slice(0, 11); // 최대 11자리
+  if (digits.length <= 3) return digits;
+  if (digits.length <= 7) return `${digits.slice(0, 3)}-${digits.slice(3)}`;
+  return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
+}
+
+
 function CouponCustomerTable({
   customers,
   onClickDetail,
@@ -55,16 +63,32 @@ function CouponCustomerTable({
             customers.map((c, idx) => {
               const isEditing = c.id === editingId;
               const isSaving = c.id === savingId;
-
+              const handleEditKeyDown = (e, customer) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault();
+                    onSaveEdit?.(customer);
+                  }
+                  if (e.key === 'Escape') {
+                    e.preventDefault();
+                    onCancelEdit?.();
+                  }
+                };
               return (
-                <tr key={c.id}>
+                <tr key={c.id}
+                className={[
+                  isEditing ? styles.editingRow : '',
+                  isSaving ? styles.savingRow : '',
+                ].join(' ')}
+                >
                   <td>{idx + 1}</td>
 
                   <td>
                     {isEditing ? (
                       <input
+                        className={styles.editInput}
                         value={editForm.customer_name}
                         onChange={(e) => onChangeEdit?.('customer_name', e.target.value)}
+                        onKeyDown={(e) => handleEditKeyDown(e, c)}
                         disabled={isSaving}
                       />
                     ) : (
@@ -75,8 +99,10 @@ function CouponCustomerTable({
                   <td>
                     {isEditing ? (
                       <input
+                        className={styles.editInput}
                         value={editForm.phone_number}
-                        onChange={(e) => onChangeEdit?.('phone_number', e.target.value)}
+                        onChange={(e) => onChangeEdit?.('phone_number', formatPhone(e.target.value))}
+                        onKeyDown={(e) => handleEditKeyDown(e, c)}
                         disabled={isSaving}
                       />
                     ) : (
