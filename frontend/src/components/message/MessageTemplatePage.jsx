@@ -12,7 +12,7 @@ const VAR_CHIPS = [
   '{studio}', '{customer_name}', '{room_name}', '{date}',
   '{start_time}', '{end_time}', '{price}',
   '{remaining_minutes}', '{duration_minutes}',
-  '{coupon_category}', '{room_category}', '{alt_times}',
+  '{coupon_category}', '{room_category}',
 ];
 
 function MessageTemplatePage() {
@@ -28,7 +28,6 @@ function MessageTemplatePage() {
   const [isActive, setIsActive] = useState(true);
 
   const [saving, setSaving] = useState(false);
-  
 
   const [previewText, setPreviewText] = useState('');
   const [previewLoading, setPreviewLoading] = useState(false);
@@ -81,7 +80,34 @@ function MessageTemplatePage() {
     }
   };
 
-  const insertToken = (token) => setDraft((prev) => prev + token);
+  const textareaRef = useRef(null);
+  const insertToken = (token) => {
+  const el = textareaRef.current;
+
+  // ref 없으면 기존처럼 뒤에 추가
+  if (!el) {
+    setDraft((prev) => prev + token);
+    return;
+  }
+
+  const start = el.selectionStart ?? draft.length;
+  const end = el.selectionEnd ?? draft.length;
+
+  const next =
+    draft.slice(0, start) +
+    token +
+    draft.slice(end);
+
+  setDraft(next);
+
+  // 렌더 후 커서 위치 복구
+  requestAnimationFrame(() => {
+    el.focus();
+    const pos = start + token.length;
+    el.setSelectionRange(pos, pos);
+  });
+};
+
 
   const onPreview = async () => {
     if (!selected) return;
@@ -168,6 +194,7 @@ function MessageTemplatePage() {
             </div>
 
             <textarea
+              ref={textareaRef}
               className={styles.textarea}
               value={draft}
               onChange={(e) => setDraft(e.target.value)}

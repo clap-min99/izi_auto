@@ -277,3 +277,6 @@ class MessageTemplate(models.Model):
 
     def __str__(self):
         return f"{self.code} ({'ON' if self.is_active else 'OFF'})"
+    
+    class Meta:
+        db_table = "message_templates"
