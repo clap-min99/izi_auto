@@ -4,16 +4,75 @@
   display: flex;
   gap: 12px;
   padding: 12px 18px;
-  height: calc(100vh - 140px); /* 헤더/탭바 높이에 맞게 필요시 조정 */
+  height: calc(100vh - 190px); /* 헤더/탭바 높이에 맞게 필요시 조정 */
   box-sizing: border-box;
 }
 
 .left {
-  width: 320px;
-  background: #f7f7f4;
-  border-radius: 4px;
-  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  height: 100%; /* 중요: 부모가 높이를 가지고 있어야 스크롤이 먹어요 */
+  min-height: 0; /* flex 자식 overflow를 위해 필요 */
+}
+
+/* 가운데 영역만 스크롤 */
+.templateListScroll {
+  flex: 1;
   overflow: auto;
+  min-height: 0;
+  padding-right: 4px; /* 스크롤바 공간 살짝 */
+}
+
+/* 하단 고정 도크 */
+.policyDock {
+  border-top: 1px solid #e5e7eb;
+  padding: 12px;
+  background: #fff;
+}
+
+/* 입시기간 UI 스타일 */
+.policyTitle {
+  font-weight: 700;
+  font-size: 14px;
+  margin-bottom: 10px;
+}
+
+.policyRow {
+  display: flex;
+  gap: 10px;
+}
+
+.policyField {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.policyLabel {
+  font-size: 12px;
+  color: #6b7280;
+}
+
+.policyInput {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #d1d5db;
+  border-radius: 10px;
+  font-size: 13px;
+  outline: none;
+}
+
+.policyInput:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 3px rgba(147, 197, 253, 0.35);
+}
+
+.policyHint {
+  margin-top: 8px;
+  font-size: 12px;
+  color: #6b7280;
+  line-height: 1.35;
 }
 
 .right {
@@ -34,6 +93,7 @@
 .leftTitle {
   font-weight: 700;
   font-size: 14px;
+  color: #41260c;
 }
 
 .templateList {

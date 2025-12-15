@@ -7,12 +7,14 @@ import {
   seedMessageTemplates,
   previewMessageTemplate,
 } from '../api/messageTemplateApi';
+import { fetchStudioPolicy, updateStudioPolicy } from '../api/studioPolicyApi';
+
 
 const VAR_CHIPS = [
   '{studio}', '{customer_name}', '{room_name}', '{date}',
   '{start_time}', '{end_time}', '{price}',
   '{remaining_minutes}', '{duration_minutes}',
-  '{coupon_category}', '{room_category}',
+  '{piano_category}', '{room_category}',
 ];
 
 function MessageTemplatePage() {
@@ -33,9 +35,16 @@ function MessageTemplatePage() {
   const [previewLoading, setPreviewLoading] = useState(false);
   const [previewReservationId, setPreviewReservationId] = useState('');
 
+  const [examStart, setExamStart] = useState('');
+  const [examEnd, setExamEnd] = useState('');
+  const [policySaving, setPolicySaving] = useState(false);
+
   const hasSeededRef = useRef(false);
 
-    const load = async () => {
+  
+
+
+  const load = async () => {
     const data = await fetchMessageTemplates();
     let list = data?.results ?? [];
 
@@ -52,12 +61,19 @@ function MessageTemplatePage() {
     if (list.length > 0) {
       setSelectedId((prev) => prev ?? list[0].id);
     }
+    };
+
+  const loadPolicy = async () => {
+    const p = await fetchStudioPolicy();
+    setExamStart(p?.exam_start_date ?? '');
+    setExamEnd(p?.exam_end_date ?? '');
   };
 
   useEffect(() => {
-    load();
-    // eslint-disable-next-line
-  }, []);
+      load();
+      loadPolicy();
+      // eslint-disable-next-line
+    }, []);
 
   useEffect(() => {
     if (!selected) return;
@@ -79,6 +95,20 @@ function MessageTemplatePage() {
       setSaving(false);
     }
   };
+
+  const onSavePolicy = async () => {
+    setPolicySaving(true);
+    try {
+      await updateStudioPolicy({
+        exam_start_date: examStart || null,
+        exam_end_date: examEnd || null,
+      });
+      await loadPolicy();
+    } finally {
+      setPolicySaving(false);
+    }
+  };
+
 
   const textareaRef = useRef(null);
   const insertToken = (token) => {
@@ -125,38 +155,83 @@ function MessageTemplatePage() {
     <div className={styles.container}>
       {/* 좌측 리스트 */}
       <div className={styles.left}>
-        <div className={styles.leftHeader}>
-          <div className={styles.leftTitle}>문자 템플릿</div>
-        </div>
+  {/* 상단 고정 헤더 */}
+  <div className={styles.leftHeader}>
+    <div className={styles.leftTitle}>💬 문자 템플릿</div>
+  </div>
 
-        <div className={styles.templateList}>
-          {templates.map((t) => {
-            const active = t.id === selectedId;
-            return (
-              <button
-                key={t.id}
-                type="button"
-                className={[styles.templateItem, active ? styles.templateItemActive : ''].join(' ')}
-                onClick={() => setSelectedId(t.id)}
-              >
-                <div className={styles.itemTop}>
-                  <span className={styles.itemTitle}>{t.title}</span>
-                  <span className={[styles.badge, t.is_active ? styles.badgeOn : styles.badgeOff].join(' ')}>
-                    {t.is_active ? '사용' : '미사용'}
-                  </span>
-                </div>
-                <div className={styles.itemCode}>{t.code}</div>
-              </button>
-            );
-          })}
-
-          {templates.length === 0 && (
-            <div className={styles.emptyBox}>
-              템플릿이 없습니다. ‘기본값 생성’을 눌러주세요.
+  {/* ✅ 가운데: 템플릿 리스트만 스크롤 */}
+  <div className={styles.templateListScroll}>
+    <div className={styles.templateList}>
+      {templates.map((t) => {
+        const active = t.id === selectedId;
+        return (
+          <button
+            key={t.id}
+            type="button"
+            className={[styles.templateItem, active ? styles.templateItemActive : ''].join(' ')}
+            onClick={() => setSelectedId(t.id)}
+          >
+            <div className={styles.itemTop}>
+              <span className={styles.itemTitle}>{t.title}</span>
+              <span className={[styles.badge, t.is_active ? styles.badgeOn : styles.badgeOff].join(' ')}>
+                {t.is_active ? '사용' : '미사용'}
+              </span>
             </div>
-          )}
+            <div className={styles.itemCode}>{t.code}</div>
+          </button>
+        );
+      })}
+
+      {templates.length === 0 && (
+        <div className={styles.emptyBox}>
+          템플릿이 없습니다.
         </div>
+      )}
+    </div>
+  </div>
+
+  {/* ✅ 하단 고정: 입시기간 설정 */}
+  <div className={styles.policyDock}>
+    <div className={styles.policyTitle}>입시기간</div>
+
+    <div className={styles.policyRow}>
+      <div className={styles.policyField}>
+        <div className={styles.policyLabel}>시작일</div>
+        <input
+          type="date"
+          className={styles.policyInput}
+          value={examStart}
+          onChange={(e) => setExamStart(e.target.value)}
+        />
       </div>
+
+      <div className={styles.policyField}>
+        <div className={styles.policyLabel}>종료일</div>
+        <input
+          type="date"
+          className={styles.policyInput}
+          value={examEnd}
+          onChange={(e) => setExamEnd(e.target.value)}
+        />
+      </div>
+    </div>
+
+    <button
+      type="button"
+      className={styles.secondaryButton}
+      onClick={onSavePolicy}
+      disabled={policySaving}
+      style={{ width: '100%', marginTop: 10 }}
+    >
+      {policySaving ? '저장중...' : '기간 저장'}
+    </button>
+
+    
+  </div>
+</div>
+            
+          
 
       {/* 우측 편집 */}
       <div className={styles.right}>
@@ -169,7 +244,6 @@ function MessageTemplatePage() {
                 <div className={styles.pageTitle}>{selected.title}</div>
                 <div className={styles.subText}>{selected.code}</div>
               </div>
-
               <label className={styles.toggle}>
                 <input
                   type="checkbox"
@@ -179,6 +253,7 @@ function MessageTemplatePage() {
                 <span>사용</span>
               </label>
             </div>
+            
 
             <div className={styles.chips}>
               {VAR_CHIPS.map((v) => (

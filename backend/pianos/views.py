@@ -11,7 +11,7 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -19,6 +19,7 @@ from .serializers import (
     CouponHistorySerializer,
     CouponCustomerRegisterOrChargeSerializer,
     MessageTemplateSerializer,
+    StudioPolicySerializer,
 )
 from .message_templates import DEFAULT_TEMPLATES, render_template
 
@@ -446,6 +447,8 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
         if reservation_id:
             r = Reservation.objects.filter(id=reservation_id).first()
             if r:
+                duration_minutes = r.get_duration_minutes()
+                
                 ctx.update({
                     "customer_name": r.customer_name,
                     "room_name": r.room_name,
@@ -453,10 +456,38 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
                     "start_time": str(r.start_time)[:5],
                     "end_time": str(r.end_time)[:5],
                     "price": getattr(r, "price", ""),
-                })
+                    "duration_minutes": duration_minutes,  # ✅ 추가
+        })
+
+        # ✅ 쿠폰 고객(전화번호로 찾는 게 제일 안정적)
+        customer = CouponCustomer.objects.filter(phone_number=r.phone_number).first()
+        if customer:
+            ctx.update({
+                "remaining_minutes": customer.remaining_time,        # ✅ 추가
+                "piano_category": customer.piano_category or "",     # ✅ 추가 (수입/국산)
+            })
 
         if isinstance(extra_ctx, dict):
             ctx.update(extra_ctx)
 
         rendered = render_template(content, ctx)
         return Response({"rendered": rendered}, status=200)
+    
+
+class StudioPolicyViewSet(viewsets.ViewSet):
+    def get_object(self):
+        obj, _ = StudioPolicy.objects.get_or_create(id=1)
+        return obj
+
+    def list(self, request):
+        obj = self.get_object()
+        return Response(StudioPolicySerializer(obj).data)
+
+    def partial_update(self, request, pk=None):
+        obj = self.get_object()
+        serializer = StudioPolicySerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    

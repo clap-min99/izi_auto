@@ -9,9 +9,35 @@ DEFAULT_TEMPLATES = {
                    "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
                    "(예약: {date} {start_time}~{end_time}, {room_name})"
     },
+    "PAYMENT_GUIDE_EXAM": {
+        "title": "입금 안내 - 입시기간",
+        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
+                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
+                   "※ 입시기간 예약은 확정 후 환불이 어렵습니다.\n"
+                   "(예약: {date} {start_time}~{end_time}, {room_name})"
+    },
+    "PAYMENT_GUIDE_ADD_PERSON": {
+        "title": "입금 안내 - 인원 추가",
+        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
+                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
+                   "※ 인원 추가 {add_person_count}명 포함\n"
+                   "(예약: {date} {start_time}~{end_time}, {room_name})"},
+    "PAYMENT_GUIDE_PROXY": {
+        "title": "입금 안내 - 대리 예약",
+        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
+                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
+                   "※ 대리 예약의 경우, 실제 이용자 성함/연락처를 회신 부탁드립니다.\n"
+                   "(예약: {date} {start_time}~{end_time}, {room_name})"
+    },
     "CONFIRMATION": {
         "title": "확정 안내",
         "content": "[{studio}] {customer_name}님, 입금 확인되어 예약 확정되었습니다.\n"
+                   "(예약: {date} {start_time}~{end_time}, {room_name}) 감사합니다."
+    },
+    "CONFIRMATION_EXAM": {
+        "title": "확정 안내 - 입시기간",
+        "content": "[{studio}] {customer_name}님, 입금 확인되어 예약 확정되었습니다.\n"
+                   "※ 입시기간 예약은 환불 규정이 다르게 적용됩니다.\n"
                    "(예약: {date} {start_time}~{end_time}, {room_name}) 감사합니다."
     },
     "COUPON_CANCEL_TIME": {
@@ -37,6 +63,7 @@ DEFAULT_TEMPLATES = {
                    "(예약: {date} {start_time}~{end_time})"
     },
 }
+
 
 class SafeDict(dict):
     def __missing__(self, key):
