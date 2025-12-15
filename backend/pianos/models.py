@@ -272,12 +272,17 @@ class CouponHistory(models.Model):
 
 class MessageTemplate(models.Model):
     class Code(models.TextChoices):
-        PAYMENT_GUIDE = "PAYMENT_GUIDE", "입금 안내"
+        PAYMENT_GUIDE = "PAYMENT_GUIDE", "입금 안내 - 기본"
+        PAYMENT_GUIDE_EXAM = "PAYMENT_GUIDE_EXAM", "입금 안내 - 입시기간"
+        PAYMENT_GUIDE_PROXY = "PAYMENT_GUIDE_PROXY", "입금 안내 - 대리 예약"
+        PAYMENT_GUIDE_ADD_PERSON = "PAYMENT_GUIDE_ADD_PERSON", "입금 안내 - 인원 추가"
         CONFIRMATION = "CONFIRMATION", "확정 안내"
+        CONFIRMATION_EXAM = "CONFIRMATION_EXAM", "확정 안내 - 입시기간"
         COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
         COUPON_CANCEL_TYPE = "COUPON_CANCEL_TYPE", "쿠폰 취소(유형 불일치)"
         NORMAL_CANCEL_CONFLICT = "NORMAL_CANCEL_CONFLICT", "일반 취소(동시간대 선입금 우선)"
         DAWN_CONFIRM = "DAWN_CONFIRM", "새벽 예약 확인"
+
 
     code = models.CharField(max_length=64, unique=True, choices=Code.choices)
     title = models.CharField(max_length=100)
@@ -285,8 +290,19 @@ class MessageTemplate(models.Model):
     is_active = models.BooleanField(default=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    class Meta:
+        db_table = "message_templates"
+    
     def __str__(self):
         return f"{self.code} ({'ON' if self.is_active else 'OFF'})"
     
+
+class StudioPolicy(models.Model):
+    exam_start_date = models.DateField(null=True, blank=True)
+    exam_end_date = models.DateField(null=True, blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
     class Meta:
-        db_table = "message_templates"
+        db_table = "studio_policies"
+        verbose_name = "스튜디오 정책"
+        verbose_name_plural = "스튜디오 정책"

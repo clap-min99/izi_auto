@@ -9,6 +9,7 @@ router = DefaultRouter()
 router.register(r'reservations', views.ReservationViewSet, basename='reservation')
 router.register(r'coupon-customers', views.CouponCustomerViewSet, basename='coupon-customer')
 router.register(r"message-templates", views.MessageTemplateViewSet, basename="message-templates")
+router.register(r"studio-policy", views.StudioPolicyViewSet, basename="studio-policy")
 
 urlpatterns = [
     # ViewSet URLs (자동 생성)
@@ -39,4 +40,11 @@ urlpatterns = [
 - POST   /api/test/transactions/               # 테스트 계좌 내역 생성
 - GET    /api/test/transactions/               # 테스트 계좌 내역 조회
 - DELETE /api/test/transactions/               # 테스트 계좌 내역 삭제
+
+입시기간 API:
+- GET /api/studio-policy/
+- PATCH /api/studio-policy/1/
+
+
 """
+

@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate
+from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate, StudioPolicy
 
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -123,3 +123,10 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
         model = MessageTemplate
         fields = ["id", "code", "title", "content", "is_active", "updated_at"]
         read_only_fields = ["id", "code", "updated_at"]
+
+
+class StudioPolicySerializer(serializers.ModelSerializer):
+    class Meta:
+        model = StudioPolicy
+        fields = ["exam_start_date", "exam_end_date", "updated_at"]
+        read_only_fields = ["updated_at"]

@@ -11,7 +11,7 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -19,6 +19,7 @@ from .serializers import (
     CouponHistorySerializer,
     CouponCustomerRegisterOrChargeSerializer,
     MessageTemplateSerializer,
+    StudioPolicySerializer,
 )
 from .message_templates import DEFAULT_TEMPLATES, render_template
 
@@ -471,3 +472,22 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
 
         rendered = render_template(content, ctx)
         return Response({"rendered": rendered}, status=200)
+    
+
+class StudioPolicyViewSet(viewsets.ViewSet):
+    def get_object(self):
+        obj, _ = StudioPolicy.objects.get_or_create(id=1)
+        return obj
+
+    def list(self, request):
+        obj = self.get_object()
+        return Response(StudioPolicySerializer(obj).data)
+
+    def partial_update(self, request, pk=None):
+        obj = self.get_object()
+        serializer = StudioPolicySerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
+
+    
