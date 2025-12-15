@@ -106,8 +106,6 @@ class ReservationMonitor:
                 
                 # 2. 예약 리스트 스크래핑 (기본 예약리스트 탭 기준)
                 current_bookings = self.scraper.scrape_all_bookings()
-                # 2-1. 현재 확정대기 개수 읽기
-                # current_pending_count = self.scraper.get_pending_count()
                 
                 # 3. 새로운 예약 확인
                 new_bookings = self.find_new_bookings(current_bookings)
@@ -118,16 +116,8 @@ class ReservationMonitor:
                     for b in new_bookings
                 )
 
-                # 3-2. 확정대기 숫자가 증가했는지 확인
-                # pending_increased = current_pending_count > self.previous_pending_count
-
-                # 조건: 새 '신청' 예약 발생 + 확정대기 개수가 이전보다 증가한 경우에만 확정대기 탭 클릭
-                # if has_new_application and pending_increased:
-                #     print(
-                #         f"👉 새 '신청' 예약 + 확정대기 {self.previous_pending_count} → {current_pending_count} 증가 감지 → 확정대기 탭 클릭"
-                #     )
-                #     # 기본 예약리스트 네이버 창에서 조건 만족 시 확정대기 탭 클릭
-                #     self.scraper.click_pending_button()
+                # ---- (A) 새 예약 처리 파트 직전에 플래그 추가 ----
+                did_actions = False  # ✅ 네이버 화면 조작(확정/취소/refresh)이 있었는지
 
                 # ★ 새 예약이 있을 때만 상세 로그
                 if new_bookings:
@@ -138,36 +128,51 @@ class ReservationMonitor:
                     print(f"\n{'─'*60}")
                     print(f"✨ 새 예약 {len(new_bookings)}건 발견!")
                     print(f"{'─'*60}")
-                    self.handle_new_bookings(new_bookings)
+                    did_actions |= self.handle_new_bookings(new_bookings)  # ✅ 여기서 bool 받기
                     
                     # 기존 예약 상태 변경 확인
                     print(f"\n{'─'*60}")
                     print("🔄 예약 상태 변경 확인")
                     print(f"{'─'*60}")
-                else:
-                    # 새 예약 없을 때는 간단한 로그만
-                    if cycle_count % 6 == 0:  # 1분마다 (10초 * 6)
-                        print(f"[{current_time.strftime('%H:%M:%S')}] ⏳ 대기 중... (예약: {len(current_bookings)}건)")
-                        # 새 예약 없을 때만 상태 동기화(스냅샷 신뢰 가능)
-                        self.update_existing_bookings(current_bookings)
+                # else:
+                #     # 새 예약 없을 때는 간단한 로그만
+                #     if cycle_count % 6 == 0:  # 1분마다 (10초 * 6)
+                #         print(f"[{current_time.strftime('%H:%M:%S')}] ⏳ 대기 중... (예약: {len(current_bookings)}건)")
+                #         # 새 예약 없을 때만 상태 동기화(스냅샷 신뢰 가능)
+                #         self.update_existing_bookings(current_bookings)
                 
                 # ★ 4. 입금 확인 (새 예약이 있을 때만 상세 로그)
+                # ---- (B) 입금 확인 파트에서 "조작 발생 가능"을 did_actions에 반영 ----
+                handled = False
                 if new_bookings:
-                    self.payment_matcher.check_pending_payments()
-                    self.payment_matcher.handle_first_payment_wins()
+                    confirmed_cnt = self.payment_matcher.check_pending_payments()
+                    handled |= (confirmed_cnt > 0)
+                    handled |= self.payment_matcher.handle_first_payment_wins()  # ✅ True/False
                 else:
-                    # 조용히 실행
                     self._silent_payment_check()
+
+                did_actions |= handled
                 
-                # 5. 이전 예약 리스트/확정대기 개수 업데이트
-                self.previous_bookings = current_bookings
-                # self.previous_pending_count = current_pending_count
-                
-                # 6. 새로고침
-                self.scraper.refresh_page()
-                
-                # 7. 대기 (10초)
-                time.sleep(10)
+                # ---- (C) ✅ 조작이 있었으면 fresh scrape로 동기화 + previous 갱신 ----
+                if did_actions:
+                    # 네이버 화면은 이미 내부에서 refresh가 일어났을 수 있으니, 여기서 확실히 최신화
+                    self.scraper.refresh_page()
+                    time.sleep(2)
+
+                    fresh_bookings = self.scraper.scrape_all_bookings()
+
+                    # ✅ 최신 스냅샷으로 DB 상태 동기화
+                    self.update_existing_bookings(fresh_bookings)
+
+                    # ✅ previous도 최신 스냅샷으로 저장 (중요)
+                    self.previous_bookings = fresh_bookings
+                else:
+                    # ✅ 이건 “상태동기화는 매 사이클”로 바꾸는 걸 추천
+                    self.update_existing_bookings(current_bookings)
+                    self.previous_bookings = current_bookings
+                    self.scraper.refresh_page()
+
+                time.sleep(7)
                 
             except KeyboardInterrupt:
                 print("\n\n⏹️ 사용자에 의해 중단됨")
@@ -212,17 +217,21 @@ class ReservationMonitor:
             print(f"⚠️ 조용한 입금 확인 중 오류: {e}")
 
     def find_new_bookings(self, current_bookings):
-        """
-        새로운 예약 찾기
-        
-        Returns:
-            list: 새로운 예약 리스트
-        """
         previous_ids = {b['naver_booking_id'] for b in self.previous_bookings}
-        new_bookings = [
-            b for b in current_bookings 
+
+        candidates = [
+            b for b in current_bookings
             if b['naver_booking_id'] not in previous_ids
         ]
+
+        # ✅ DB에도 없는 것만 "진짜 새 예약"
+        candidate_ids = [b['naver_booking_id'] for b in candidates]
+        existing_ids = set(
+            Reservation.objects.filter(naver_booking_id__in=candidate_ids)
+            .values_list('naver_booking_id', flat=True)
+        )
+
+        new_bookings = [b for b in candidates if b['naver_booking_id'] not in existing_ids]
         return new_bookings
 
     def sync_initial_bookings_to_db(self):
@@ -257,6 +266,8 @@ class ReservationMonitor:
         """
         새 예약 처리
         """
+        did_actions = False
+
         for booking in new_bookings:
             # 테스트 박수민,하건수
             allowed = self._is_allowed_customer(booking.get("customer_name"))
@@ -283,7 +294,8 @@ class ReservationMonitor:
 
                     if allowed:
                         if not self.dry_run:
-                            self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
+                            ok = self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
+                            did_actions |= bool(ok)   # ✅ 취소 성공했으면 조작 발생 True
                         else:
                             print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
                         self.sms_sender.send_cancel_message(reservation, reason)
@@ -306,18 +318,28 @@ class ReservationMonitor:
                 naver_status = booking.get('reservation_status', '신청')
                 reservation = self.save_booking_to_db(booking, status=naver_status)
                 
-                # 3. 쿠폰 예약 처리
+                # 3. 쿠폰/일반 처리 딱 1번만 실행
                 if booking['is_coupon']:
-                    self.handle_coupon_booking(reservation, booking)
+                    success = bool(self.handle_coupon_booking(reservation, booking))  # ✅ 한 번만
                 else:
-                    # 4. 일반 예약 처리
-                    self.handle_general_booking(reservation, booking)
+                    success = bool(self.handle_general_booking(reservation, booking))  # ✅ 한 번만
+
+                did_actions |= success  # ✅ 조작 발생 여부 반영
+
+                # 4. (쿠폰 성공 시에만) defer_cancel 처리
+                if booking['is_coupon']:
+                    if success and conflict_result.get('action') == 'defer_cancel_until_coupon_confirmed':
+                        for target in conflict_result.get('cancel_targets', []):
+                            self.conflict_checker._cancel_reservation(
+                                target,
+                                reason="쿠폰 예약과 시간대 충돌"
+                            )
                     
             except Exception as e:
                 print(f"   ❌ 예약 처리 오류: {e}")
                 import traceback
                 traceback.print_exc()
-    
+        return did_actions
     def handle_general_booking(self, reservation, booking):
         """
         일반(입금) 예약 처리
@@ -337,13 +359,15 @@ class ReservationMonitor:
             
             # 2) 문자 발송 상태 DB 반영
             reservation.account_sms_status = '전송완료'
-            reservation.save()
+            reservation.save(update_fields=['account_sms_status', 'updated_at'])
             print(f"      💬 입금 안내 문자 발송 완료")
+            return False  # ✅ 네이버 확정/취소 조작 없음
             
         except Exception as e:
             print(f"      ❌ 일반 예약 처리 오류: {e}")
             import traceback
             traceback.print_exc()
+            return False
     
     def handle_coupon_booking(self, reservation, booking):
         """
@@ -355,7 +379,7 @@ class ReservationMonitor:
         allowed = self._is_allowed_customer(reservation.customer_name)
         if not allowed:
             print(f"      🛡️ 안전모드: '{reservation.customer_name}' 쿠폰 확정/취소/문자 스킵 (DB 기록만)")
-            return
+            return False
         print(f"      🎫 쿠폰 예약 처리 시작")
 
         ok, customer, reason = self.coupon_manager.check_balance(reservation)
@@ -363,7 +387,7 @@ class ReservationMonitor:
         if not ok:
             print(f"      ❌ 쿠폰 처리 불가 → 취소 ({reason})")
             self._cancel_coupon_booking(reservation, reason)
-            return
+            return True   # ✅ (취소 시도) = 네이버 조작 의도/발생
 
         print("      ✅ 쿠폰 조건 통과 → 즉시 확정/차감 진행")
         success = self.coupon_manager.confirm_and_deduct(
@@ -374,10 +398,11 @@ class ReservationMonitor:
 
         if success:
             print("      ✅ 쿠폰 예약 확정/차감 완료")
-        else:
-            # 확정 실패 시 안전하게 취소 처리
-            print("      ❌ 쿠폰 확정 실패 → 취소")
-            self._cancel_coupon_booking(reservation, "쿠폰 확정 처리 실패")
+            return True
+        
+        print("      ❌ 쿠폰 확정 실패 → 취소")
+        self._cancel_coupon_booking(reservation, "쿠폰 확정 처리 실패")
+        return True      # ✅ 취소 조작 발생
     
     def _cancel_coupon_booking(self, reservation, reason):
         """쿠폰 예약 취소 처리"""
@@ -403,27 +428,28 @@ class ReservationMonitor:
             traceback.print_exc()
     
     def save_booking_to_db(self, booking, status='신청'):
-        """
-        예약 정보를 DB에 저장
-        
-        Returns:
-            Reservation: 저장된 예약 객체
-        """
-        reservation = Reservation.objects.create(
+        reservation, created = Reservation.objects.update_or_create(
             naver_booking_id=booking['naver_booking_id'],
-            # booking_datetime=booking.get('booking_datetime', datetime.now()),
-            customer_name=booking['customer_name'],
-            phone_number=booking['phone_number'],
-            room_name=booking['room_name'],
-            reservation_date=booking['reservation_date'],
-            start_time=booking['start_time'],
-            end_time=booking['end_time'],
-            price=booking['price'],
-            is_coupon=booking['is_coupon'],
-            reservation_status=status,
-            account_sms_status='전송전',
-            complete_sms_status='입금확인전'
+            defaults={
+                'customer_name': booking['customer_name'],
+                'phone_number': booking['phone_number'],
+                'room_name': booking['room_name'],
+                'reservation_date': booking['reservation_date'],
+                'start_time': booking['start_time'],
+                'end_time': booking['end_time'],
+                'price': booking['price'],
+                'is_coupon': booking['is_coupon'],
+                'reservation_status': status,
+                # 이미 저장된 데이터라면 문자상태 덮어쓰지 않게 주의!
+                # 처음 생성일 때만 기본값 넣고 싶으면 아래처럼 분기 권장
+            }
         )
+
+        if created:
+            reservation.account_sms_status = '전송전'
+            reservation.complete_sms_status = '입금확인전'
+            reservation.save(update_fields=['account_sms_status', 'complete_sms_status', 'updated_at'])
+
         return reservation
     
     def update_existing_bookings(self, current_bookings):
@@ -449,16 +475,25 @@ class ReservationMonitor:
                     continue
                 
                 # 상태가 다르면 업데이트
-                if reservation.reservation_status != naver_status:
-                    # ✅ 역방향 방지: 확정/취소를 신청으로 되돌리지 않음
-                    if reservation.reservation_status in ('확정', '취소') and naver_status == '신청':
-                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({reservation.reservation_status} -> 신청) 스킵")
+                old_status = reservation.reservation_status
+
+                if old_status != naver_status:
+                    # ✅ 역방향 방지
+                    if old_status in ('확정', '취소') and naver_status == '신청':
+                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({old_status} -> 신청) 스킵")
                         continue
+
                     print(f"   🔁 상태 변경 감지: {reservation.naver_booking_id}")
-                    print(f"      - {reservation.reservation_status} → {naver_status}")
-                    
+                    print(f"      - {old_status} → {naver_status}")
+
+                    # ✅ (추가) 쿠폰 예약 확정 → 취소이면 쿠폰 환불
+                    if old_status == '확정' and naver_status == '취소' and reservation.is_coupon:
+                        refunded = self.coupon_manager.refund_if_confirmed_coupon_canceled(reservation)
+                        if refunded:
+                            print(f"      ♻️ 쿠폰 환불 처리 완료 (+{reservation.get_duration_minutes()}분)")
+
                     reservation.reservation_status = naver_status
-                    reservation.save()
+                    reservation.save(update_fields=['reservation_status', 'updated_at'])
                     updated_count += 1
                     
             except Exception as e:

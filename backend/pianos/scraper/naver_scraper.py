@@ -125,10 +125,13 @@ class NaverPlaceScraper:
             phone_number = phone_el.text.strip()
 
             # 4) 네이버 예약번호
-            naver_booking_id = row.find_element(
+            raw_booking_id = row.find_element(
                 By.CLASS_NAME,
                 "BookingListView__book-number__33dBa"
             ).text.strip()
+
+            m = re.search(r"\d+", raw_booking_id)
+            naver_booking_id = m.group(0) if m else raw_booking_id  # fallback
 
             # 5) 예약일시 "25. 12. 10.(수) 오전 11:00~12:00"
             datetime_str = row.find_element(
@@ -223,7 +226,12 @@ class NaverPlaceScraper:
                         By.CLASS_NAME,
                         "BookingListView__book-number__33dBa"
                     )
-                    if book_no_el.text.strip() == str(naver_booking_id):
+                    raw = (book_no_el.text or "").strip()
+
+                    m = re.search(r"\d+", raw)
+                    row_booking_id = m.group(0) if m else raw
+
+                    if row_booking_id == str(naver_booking_id):
                         # 행 전체 클릭 (체크박스 말고)
                         self.driver.execute_script("arguments[0].click();", row)
                         WebDriverWait(self.driver, 5).until(

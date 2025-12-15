@@ -28,6 +28,60 @@ class CouponManager:
     
     def __init__(self, dry_run=True):
         self.dry_run = dry_run  # ⭐ DRY_RUN 모드
+
+    @transaction.atomic
+    def refund_if_confirmed_coupon_canceled(self, reservation, reason="예약자 자발 취소"):
+        """
+        '확정' 처리되어 쿠폰이 차감된 예약이 '취소'로 바뀐 경우, 차감한 시간을 되돌립니다.
+        - idempotent(중복 환불 방지)
+        """
+        if not getattr(reservation, "is_coupon", False):
+            return False
+
+        # 1) 이 예약에 대해 '사용' 이력이 있는지(=차감이 실제로 일어났는지) 확인
+        used_exists = CouponHistory.objects.filter(
+            reservation=reservation,
+            transaction_type='사용',
+        ).exists()
+
+        if not used_exists:
+            # 차감이 없었으면 환불할 것도 없음
+            return False
+
+        duration = reservation.get_duration_minutes()
+
+        # 2) 이미 환불 이력이 생성됐으면 중복 환불 방지
+        refunded_exists = CouponHistory.objects.filter(
+            reservation=reservation,
+            transaction_type='환불',
+            used_or_charged_time=duration
+        ).exists()
+        if refunded_exists:
+            return False
+
+        # 3) 고객 찾기
+        customer = CouponCustomer.objects.filter(phone_number=reservation.phone_number).first()
+        if not customer:
+            return False
+
+        # 4) 잔여시간 복구 + 이력 생성(충전으로 기록)
+        customer.remaining_time += duration
+        customer.save(update_fields=["remaining_time", "updated_at"])
+
+        CouponHistory.objects.create(
+            customer=customer,
+            reservation=reservation,
+            customer_name=customer.customer_name,
+            room_name=reservation.room_name,            # 추적용
+            transaction_date=timezone.localdate(),      # 환불 처리일
+            start_time=reservation.start_time,
+            end_time=reservation.end_time,
+            remaining_time=customer.remaining_time,
+            used_or_charged_time=duration,              # +duration (환불)
+            transaction_type='환불'
+        )
+
+        return True
     
     def check_balance(self, reservation):
         """
