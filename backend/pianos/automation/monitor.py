@@ -475,16 +475,25 @@ class ReservationMonitor:
                     continue
                 
                 # 상태가 다르면 업데이트
-                if reservation.reservation_status != naver_status:
-                    # ✅ 역방향 방지: 확정/취소를 신청으로 되돌리지 않음
-                    if reservation.reservation_status in ('확정', '취소') and naver_status == '신청':
-                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({reservation.reservation_status} -> 신청) 스킵")
+                old_status = reservation.reservation_status
+
+                if old_status != naver_status:
+                    # ✅ 역방향 방지
+                    if old_status in ('확정', '취소') and naver_status == '신청':
+                        print(f"   🛡️ 역변경 방지: {reservation.naver_booking_id} ({old_status} -> 신청) 스킵")
                         continue
+
                     print(f"   🔁 상태 변경 감지: {reservation.naver_booking_id}")
-                    print(f"      - {reservation.reservation_status} → {naver_status}")
-                    
+                    print(f"      - {old_status} → {naver_status}")
+
+                    # ✅ (추가) 쿠폰 예약 확정 → 취소이면 쿠폰 환불
+                    if old_status == '확정' and naver_status == '취소' and reservation.is_coupon:
+                        refunded = self.coupon_manager.refund_if_confirmed_coupon_canceled(reservation)
+                        if refunded:
+                            print(f"      ♻️ 쿠폰 환불 처리 완료 (+{reservation.get_duration_minutes()}분)")
+
                     reservation.reservation_status = naver_status
-                    reservation.save()
+                    reservation.save(update_fields=['reservation_status', 'updated_at'])
                     updated_count += 1
                     
             except Exception as e:

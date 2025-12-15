@@ -218,6 +218,7 @@ class CouponHistory(models.Model):
     TRANSACTION_TYPE_CHOICES = [
         ('충전', '충전'),
         ('사용', '사용'),
+        ('환불', '환불'),
     ]
     
     customer = models.ForeignKey(
