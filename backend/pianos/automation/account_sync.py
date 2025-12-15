@@ -61,6 +61,12 @@ class AccountSyncManager:
         svc.UseStaticIP = cfg.use_static_ip
         svc.UseLocalTimeYN = cfg.use_local_time
         return svc
+    
+    @staticmethod
+    def parse_depositor_name(memo: str) -> str:
+        if not memo:
+            return ""
+        return memo.split("|", 1)[0].strip()
 
     def sync_transactions(self, lookback_days: int = 2) -> int:
         """
@@ -170,6 +176,7 @@ class AccountSyncManager:
                 getattr(d, "remark4", "") or "",
             ]
             memo = " | ".join([p.strip() for p in memo_parts if p and p.strip()])
+            depositor = self.parse_depositor_name(memo)
 
             rows.append({
                 "transaction_id": tid,                         # 모델: transaction_id
@@ -178,7 +185,7 @@ class AccountSyncManager:
                 "transaction_type": "입금",                    # 모델: transaction_type
                 "amount": amount_in,                            # 모델: amount
                 "balance": balance,                             # 모델: balance
-                "depositor_name": "",                           # 모델: depositor_name (일단 빈값)
+                "depositor_name": depositor,                           # 모델: depositor_name
                 "memo": memo,                                   # 모델: memo
             })
 
