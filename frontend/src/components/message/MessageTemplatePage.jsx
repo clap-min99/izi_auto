@@ -12,7 +12,7 @@ const VAR_CHIPS = [
   '{studio}', '{customer_name}', '{room_name}', '{date}',
   '{start_time}', '{end_time}', '{price}',
   '{remaining_minutes}', '{duration_minutes}',
-  '{coupon_category}', '{room_category}',
+  '{piano_category}', '{room_category}',
 ];
 
 function MessageTemplatePage() {
