@@ -186,6 +186,60 @@ class NaverPlaceScraper:
                 is_coupon = len(coupon_el) > 0
             except Exception:
                 is_coupon = False
+            
+             # ✅ [추가] 인원 추가 옵션(국산/수입) 파싱 → base_amount 역산 → 실청구금액 계산
+            try:
+                extra_qty = 0
+                kind = None  # "국산" | "수입"
+
+                # 옵션 셀들 중 "인원 추가"만 추출
+                option_els = row.find_elements(
+                    By.XPATH,
+                    ".//div[contains(@class,'BookingListView__option') and (contains(., '인원 추가') or contains(@title, '인원 추가'))]"
+                )
+
+                for el in option_els:
+                    txt = (el.get_attribute("title") or el.text or "").strip()
+
+                    m_qty = re.search(r"인원\s*추가.*?\((\d+)\)", txt)
+                    if not m_qty:
+                        continue
+
+                    extra_qty = int(m_qty.group(1))
+
+                    if "국산" in txt:
+                        kind = "국산"
+                    elif "수입" in txt:
+                        kind = "수입"
+
+                    # 인원 추가 옵션은 보통 1개라서 찾으면 종료
+                    break
+
+                gross_amount = price  # 네이버가 보여주는 총 금액(옵션 포함)
+
+                if extra_qty > 0 and kind in ("국산", "수입"):
+                    unit = 4000 if kind == "국산" else 5500
+                    base_amount = gross_amount - (unit * extra_qty)
+
+                    # 이상치 방어: base가 0 이하이면 파싱 실패로 보고 옵션 무시
+                    if base_amount <= 0:
+                        base_amount = gross_amount
+                        extra_qty = 0
+
+                    # ✅ 실청구금액 = base + base*0.5*extra_qty (반올림 고려 X)
+                    final_amount = base_amount + (base_amount * extra_qty // 2)
+                    # print(
+                    #     f"   💰 인원추가 요금 재계산 | "
+                    #     f"gross={gross_amount:,}원 → "
+                    #     f"base={base_amount:,}원 | "
+                    #     f"추가인원={extra_qty}명({kind}) | "
+                    #     f"final={final_amount:,}원"
+                    # )
+                    price = final_amount  # ⭐ booking_data["price"]에 들어갈 값 덮어쓰기
+
+            except Exception as e:
+                print(f"   ⚠️ 인원추가 요금 계산 실패: {e}")
+                # 실패 시 price(gross) 그대로 유지
 
             booking_data = {
                 "naver_booking_id": naver_booking_id,
@@ -198,6 +252,7 @@ class NaverPlaceScraper:
                 "price": price,
                 "reservation_status": status,
                 "is_coupon": is_coupon,
+                "extra_people_qty": extra_qty,
             }
 
             # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
@@ -270,6 +325,7 @@ class NaverPlaceScraper:
                         'price': booking['price'],
                         'reservation_status': booking['reservation_status'],
                         'is_coupon': booking['is_coupon'],
+                        "extra_people_qty": booking.get("extra_people_qty", 0),
                     }
                 )
                 

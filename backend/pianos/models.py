@@ -1,5 +1,6 @@
 from django.db import models
 from django.utils import timezone
+from datetime import datetime
 
 
 class CouponCustomer(models.Model):
@@ -167,6 +168,7 @@ class Reservation(models.Model):
     end_time = models.TimeField(verbose_name="종료시간")
     price = models.IntegerField(verbose_name="요금")
     is_coupon = models.BooleanField(default=False, verbose_name="쿠폰여부")
+    extra_people_qty = models.PositiveIntegerField(default=0, verbose_name="인원추가수량")
     
     # 문자 발송 상태
     account_sms_status = models.CharField(
@@ -203,13 +205,20 @@ class Reservation(models.Model):
         return f"{self.customer_name} - {self.room_name} ({self.reservation_date})"
     
     def get_duration_minutes(self):
-        """예약 시간(분) 계산"""
-        from datetime import datetime, timedelta
-        start = datetime.combine(self.reservation_date, self.start_time)
-        end = datetime.combine(self.reservation_date, self.end_time)
-        if end < start:
-            end += timedelta(days=1)
-        return int((end - start).total_seconds() / 60)
+        if not self.start_time or not self.end_time:
+            return 0
+
+        start_dt = datetime.combine(self.reservation_date, self.start_time)
+        end_dt = datetime.combine(self.reservation_date, self.end_time)
+        base = int((end_dt - start_dt).total_seconds() / 60)
+
+        extra = int(getattr(self, "extra_people_qty", 0) or 0)
+
+        # 쿠폰 예약일 때만 인원추가 가산: n시간 예약이면, 인원추가 1명당 0.5*n시간 추가 차감
+        if getattr(self, "is_coupon", False) and extra > 0:
+            return base + (base * extra // 2)  # 반올림 고려 X (요청대로)
+
+        return base
 
 
 class CouponHistory(models.Model):
