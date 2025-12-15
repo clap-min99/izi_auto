@@ -306,8 +306,10 @@ class PaymentMatcher:
             self._cancel_loser(reservation=loser, reason=reason, trans=trans)
 
     
-    def handle_first_payment_wins(self):
+    def handle_first_payment_wins(self) -> bool:
         """
+        선입금/충돌 처리에서 실제 확정/취소 등 액션이 발생했는지 반환
+        +
         선입금자 확정 처리
         
         같은 시간대에 여러 일반 예약이 있을 때:
@@ -319,8 +321,9 @@ class PaymentMatcher:
         conflicting_groups = self._find_conflicting_groups()
         
         if not conflicting_groups:
-            return
+            return False
         
+        did_actions = False
         print(f"\n{'='*60}")
         print(f"🏆 선입금 확정 처리")
         print(f"{'='*60}")
@@ -328,7 +331,9 @@ class PaymentMatcher:
         
         # 2. 각 그룹에 대해 선입금자 확정
         for group in conflicting_groups:
-            self._process_conflicting_group(group)
+            did_actions |= bool(self._process_conflicting_group(group))  # ✅ group 처리 결과 누적
+
+        return did_actions
     
     def _find_conflicting_groups(self):
         """
@@ -389,7 +394,7 @@ class PaymentMatcher:
 
         return conflicting_groups
     
-    def _process_conflicting_group(self, group):
+    def _process_conflicting_group(self, group) -> bool:
         """
         충돌 그룹 처리: "입금자 있으면 선입금자만 확정", 나머지는 전부 취소(문자 동일)
         정책:
@@ -418,7 +423,7 @@ class PaymentMatcher:
         paid_list = [x for x in payment_info if x['transaction'] is not None]
         if not paid_list:
             print("      ℹ️ 입금자 없음 → 그룹 유지(확정/취소 없음)")
-            return
+            return False
 
         # 2) 선입금자(가장 빠른 payment_time) 선정
         paid_list.sort(key=lambda x: x['payment_time'])
@@ -430,7 +435,8 @@ class PaymentMatcher:
         print(f"      🏆 선입금자: {winner_res.customer_name}")
 
         # 3) winner 확정
-        self._confirm_reservations([winner_res], [winner_tx])
+        confirmed_cnt = self._confirm_reservations([winner_res], [winner_tx])
+        did_actions = (confirmed_cnt > 0)
 
         # 4) loser 전부 취소 (문자 동일), 입금한 loser는 거래만 '취소' 표시
         reason = "같은 시간대 선입금자 우선"
@@ -443,7 +449,8 @@ class PaymentMatcher:
 
             print(f"      ❌ 자동 취소: {res.customer_name} (입금여부: {'입금' if trans else '미입금'})")
             self._cancel_loser(reservation=res, reason=reason, trans=trans)
-
+            did_actions = True   # ✅ 취소 시도하면 조작 발생으로 간주
+        return did_actions
     
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
@@ -455,7 +462,7 @@ class PaymentMatcher:
             match_status='확정전'
         ).order_by('transaction_date', 'transaction_time').first()
     
-    def _cancel_loser(self, reservation, reason, trans=None):
+    def _cancel_loser(self, reservation, reason, trans=None) -> bool:
         """
         loser 취소 처리 (문자 통합)
         - 입금/미입금 상관없이 같은 취소 문자
@@ -464,11 +471,12 @@ class PaymentMatcher:
         # 테스트 박수민, 하건수
         if not self._is_allowed_customer(reservation.customer_name):
             print(f"         🛡️ 안전모드: '{reservation.customer_name}' 취소 처리 스킵")
-            return
+            return False
         try:
-            # 네이버 취소 (사유 입력 가능하면 reason 전달)
             if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
+                ok = self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
+                if not ok:
+                    return False
             else:
                 print(f"         [DRY_RUN] 네이버 취소 시뮬레이션")
 
@@ -484,10 +492,14 @@ class PaymentMatcher:
                     trans.match_status = '취소'
                     trans.save(update_fields=['match_status', 'updated_at'])
 
+            return True
+        
         except Exception as e:
             print(f"         ❌ 취소 처리 오류: {e}")
             import traceback
             traceback.print_exc()
+            return False
+
 
 
 

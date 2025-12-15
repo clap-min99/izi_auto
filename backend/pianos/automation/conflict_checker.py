@@ -113,26 +113,24 @@ class ConflictChecker:
     
     def _handle_coupon_conflict(self, new_booking, conflicting_reservations):
         """
-        새 쿠폰 예약 vs 기존 일반 예약(신청)
-        → 쿠폰 즉시 확정, 일반 취소
+        새 쿠폰 예약 vs 기존 예약 충돌
+        ✅ 여기서는 '취소'를 실행하지 말고, 취소 대상만 반환한다.
+        - 실제 취소는 '쿠폰 예약이 확정 성공'한 뒤에만 수행
         """
         print(f"      🎫 쿠폰 예약 우선 처리")
         
-        # 1. 충돌 일반 예약들 취소
-        for conf_res in conflicting_reservations:
-            if not conf_res.is_coupon:
-                self._cancel_reservation(
-                    conf_res,
-                    reason="쿠폰 예약과 시간대 충돌"
-                )
-        
-        # 2. 쿠폰 예약은 즉시 확정
+        cancel_targets = [
+            r for r in conflicting_reservations
+            if not r.is_coupon and r.reservation_status in ['신청', '확정']
+        ]
+
         return {
             'has_conflict': True,
-            'action': 'proceed',
-            'message': '쿠폰 예약 우선 확정, 충돌 예약 취소'
+            'action': 'defer_cancel_until_coupon_confirmed',
+            'message': '쿠폰 확정 성공 시 충돌 일반 예약 취소',
+            'cancel_targets': cancel_targets,  # ✅ Reservation 객체 리스트
         }
-    
+
     def _handle_general_vs_coupon(self, new_booking):
         """
         새 일반 예약 vs 기존 쿠폰 예약
