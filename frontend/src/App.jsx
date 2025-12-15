@@ -6,7 +6,8 @@ import ReservationPage from './components/reservations/ReservationPage';
 import CouponCustomerPage from './components/coupon/CouponCustomerPage';
 import DepositPage from './components/deposit/DepositPage';
 import CouponModal from './components/coupon/CouponModal';
-import { createOrChargeCouponCustomer } from './components/api/couponCustomerApi';
+// import { createOrChargeCouponCustomer } from './components/api/couponCustomerApi';
+import MessageTemplatePage from './components/message/MessageTemplatePage'; 
 import tabStyles from './components/layout/TabBar.module.css';
 
 function App() {
@@ -22,14 +23,14 @@ function App() {
   const [isCouponOpen, setIsCouponOpen] = useState(false);
   const [couponRefreshKey, setCouponRefreshKey] = useState(0);
 
-  const handleSubmitCoupon = async (form) => {
-    await createOrChargeCouponCustomer({
-      customer_name: form.name,
-      phone_number: form.phone,
-      charged_time: Number(form.time) || 0,
-    });
-    setCouponRefreshKey(k => k + 1);
-  };
+  // const handleSubmitCoupon = async (form) => {
+  //   await createOrChargeCouponCustomer({
+  //     customer_name: form.name,
+  //     phone_number: form.phone,
+  //     charged_time: Number(form.time) || 0,
+  //   });
+  //   setCouponRefreshKey(k => k + 1);
+  // };
 
   // 🔥 탭 오른쪽 검색창 렌더링
   let rightSearchInput = null;
@@ -70,6 +71,11 @@ function App() {
     );
   }
 
+    if (activeTab === 'message') {
+    rightSearchInput = null;
+  }
+
+
   // 🔥 content 렌더링
   let content = null;
   if (activeTab === 'reservation') {
@@ -83,6 +89,8 @@ function App() {
       );
     } else if (activeTab === 'deposit') {
       content = <DepositPage search={depositSearch} />;
+    } else if (activeTab === 'message') {
+      content = <MessageTemplatePage />; // ✅ 추가
     }
 
   return (

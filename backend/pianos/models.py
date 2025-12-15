@@ -259,3 +259,25 @@ class CouponHistory(models.Model):
 
     def __str__(self):
         return f"{self.customer_name} - {self.transaction_type} ({self.transaction_date})"
+    
+
+class MessageTemplate(models.Model):
+    class Code(models.TextChoices):
+        PAYMENT_GUIDE = "PAYMENT_GUIDE", "입금 안내"
+        CONFIRMATION = "CONFIRMATION", "확정 안내"
+        COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
+        COUPON_CANCEL_TYPE = "COUPON_CANCEL_TYPE", "쿠폰 취소(유형 불일치)"
+        NORMAL_CANCEL_CONFLICT = "NORMAL_CANCEL_CONFLICT", "일반 취소(동시간대 선입금 우선)"
+        DAWN_CONFIRM = "DAWN_CONFIRM", "새벽 예약 확인"
+
+    code = models.CharField(max_length=64, unique=True, choices=Code.choices)
+    title = models.CharField(max_length=100)
+    content = models.TextField(default="")
+    is_active = models.BooleanField(default=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.code} ({'ON' if self.is_active else 'OFF'})"
+    
+    class Meta:
+        db_table = "message_templates"

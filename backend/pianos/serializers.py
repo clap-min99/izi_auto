@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Reservation, CouponCustomer, CouponHistory
+from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate
 
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -116,3 +116,10 @@ class CouponCustomerRegisterOrChargeSerializer(serializers.Serializer):
         if value < 0:
             raise serializers.ValidationError("충전 시간은 0분 이상이어야 합니다.")
         return value
+
+
+class MessageTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = MessageTemplate
+        fields = ["id", "code", "title", "content", "is_active", "updated_at"]
+        read_only_fields = ["id", "code", "updated_at"]
