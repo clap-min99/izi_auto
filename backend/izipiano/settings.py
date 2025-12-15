@@ -11,6 +11,10 @@ https://docs.djangoproject.com/en/4.2/ref/settings/
 """
 
 from pathlib import Path
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # .env 로드
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -143,3 +147,17 @@ STATIC_URL = 'static/'
 # https://docs.djangoproject.com/en/4.2/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# POPBILL 관련
+POPBILL_LINK_ID = os.getenv("POPBILL_LINK_ID")
+POPBILL_SECRET_KEY = os.getenv("POPBILL_SECRET_KEY")
+POPBILL_CORP_NUM = os.getenv("POPBILL_CORP_NUM")
+POPBILL_USER_ID = os.getenv("POPBILL_USER_ID")
+
+POPBILL_BANK_CODE = os.getenv("POPBILL_BANK_CODE")
+POPBILL_ACCOUNT_NUMBER = os.getenv("POPBILL_ACCOUNT_NUMBER")
+
+POPBILL_IS_TEST = True
+POPBILL_IP_RESTRICT = True
+POPBILL_USE_STATIC_IP = False
+POPBILL_USE_LOCAL_TIME = True

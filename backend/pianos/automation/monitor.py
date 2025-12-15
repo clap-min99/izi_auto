@@ -1,8 +1,9 @@
 """
 예약 실시간 모니터링 시스템 (통합 버전)
 - 예약 스크래핑
-- 계좌 내역 동기화 (5분 주기)
-- 입금 확인 및 매칭
+- 5분마다:
+    1) 팝빌 계좌내역 동기화 -> AccountTransaction 저장
+    2) DB 기반 입금 매칭/확정 로직 수행
 - 선입금 우선 처리
 - 충돌 확인 및 처리
 """
@@ -506,6 +507,37 @@ class ReservationMonitor:
         else:
             print(f"   ℹ️ 상태 변경 없음")
 
+class BankSyncAndMatchMonitor:
+    def __init__(self, dry_run: bool = False, interval_sec: int = 300):
+        self.dry_run = dry_run
+        self.interval_sec = interval_sec
+
+        self.sync_manager = AccountSyncManager(dry_run=dry_run)
+        self.matcher = PaymentMatcher(dry_run=dry_run)
+
+        self.next_run_at = timezone.now()
+
+    def run_forever(self):
+        print("🚀 BankSyncAndMatchMonitor 시작")
+        print(f"   - interval: {self.interval_sec}s (5분이면 300)")
+        print(f"   - dry_run: {self.dry_run}")
+
+        while True:
+            now = timezone.now()
+            if now >= self.next_run_at:
+                self.run_once()
+                self.next_run_at = now + timedelta(seconds=self.interval_sec)
+
+            time.sleep(1)
+
+    def run_once(self):
+        # 1) 계좌 동기화
+        new_cnt = self.sync_manager.sync_transactions(lookback_days=2)
+
+        # 2) 매칭/확정 로직
+        # 신규 거래가 있을 때만 돌리고 싶으면 if new_cnt > 0: 로 감싸셔도 됩니다.
+        self.matcher.check_pending_payments()
+        self.matcher.handle_first_payment_wins()
 
 def main():
     # 네이버 예약 관리 페이지 URL
