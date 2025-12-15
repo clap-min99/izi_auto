@@ -7,6 +7,7 @@ function TabBar({ activeTab, onChange, rightContent }) {
     { id: 'reservation', label: '예약 관리' },
     { id: 'prepaid', label: '쿠폰 고객' },
     { id: 'deposit', label: '계좌 확인' },
+    { id: 'message', label: '문자 관리' },
   ];
 
   return (

@@ -8,6 +8,7 @@ from . import views
 router = DefaultRouter()
 router.register(r'reservations', views.ReservationViewSet, basename='reservation')
 router.register(r'coupon-customers', views.CouponCustomerViewSet, basename='coupon-customer')
+router.register(r"message-templates", views.MessageTemplateViewSet, basename="message-templates")
 
 urlpatterns = [
     # ViewSet URLs (자동 생성)
