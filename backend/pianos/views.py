@@ -194,7 +194,7 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 'remaining_time': customer.remaining_time,
             },
             'histories': CouponHistorySerializer(
-                customer.histories.all().order_by('-transaction_date', '-created_at'),
+                customer.histories.all().order_by('-created_at', 'id'),
                 many=True
             ).data
         })

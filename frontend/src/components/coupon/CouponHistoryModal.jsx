@@ -92,7 +92,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
             </div>
 
             <div className={styles.footer}>
-              잔여시간: {(remainingTime)/60}
+              잔여시간 : {(remainingTime)/60}시간
             </div>
           </>
         )}

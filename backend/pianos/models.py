@@ -255,7 +255,7 @@ class CouponHistory(models.Model):
         db_table = 'coupon_history'
         verbose_name = '쿠폰 사용 이력'
         verbose_name_plural = '쿠폰 사용 이력 목록'
-        ordering = ['-transaction_date', '-created_at']
+        ordering = ['created_at']
 
     def __str__(self):
         return f"{self.customer_name} - {self.transaction_type} ({self.transaction_date})"

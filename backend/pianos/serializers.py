@@ -70,13 +70,13 @@ class CouponHistorySerializer(serializers.ModelSerializer):
         return obj.room_name if obj.room_name else '-'
     
     def get_usage_datetime(self, obj):
-        """이용일시 포맷팅"""
-        if obj.start_time and obj.end_time:
-            start = f"{obj.transaction_date}T{obj.start_time}"
-            end = f"{obj.transaction_date}T{obj.end_time}"
-            return f"{start} ~ {end}"
-        return '-'
-
+        """이용일시 포맷팅: YYYY-MM-DD HH:MM ~ HH:MM"""
+        if obj.transaction_date and obj.start_time and obj.end_time:
+            date_str = obj.transaction_date.strftime("%Y-%m-%d")
+            start_str = obj.start_time.strftime("%H:%M")
+            end_str = obj.end_time.strftime("%H:%M")
+            return f"{date_str} {start_str} ~ {end_str}"
+        return "-"
 
 class CouponCustomerDetailSerializer(serializers.ModelSerializer):
     """쿠폰 고객 상세 + 이력 Serializer (모달용)"""
