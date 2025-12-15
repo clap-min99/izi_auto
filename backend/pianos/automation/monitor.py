@@ -440,6 +440,7 @@ class ReservationMonitor:
                 'price': booking['price'],
                 'is_coupon': booking['is_coupon'],
                 'reservation_status': status,
+                'extra_people_qty': booking.get('extra_people_qty', 0),
                 # 이미 저장된 데이터라면 문자상태 덮어쓰지 않게 주의!
                 # 처음 생성일 때만 기본값 넣고 싶으면 아래처럼 분기 권장
             }

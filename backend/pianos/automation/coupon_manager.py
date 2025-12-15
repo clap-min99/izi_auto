@@ -49,6 +49,9 @@ class CouponManager:
             return False
 
         duration = reservation.get_duration_minutes()
+        extra = getattr(reservation, "extra_people_qty", 0) or 0
+        print(f"      - 인원추가 수량: {extra}")
+        print(f"      - 차감 시간(인원추가 반영): {duration}분")
 
         # 2) 이미 환불 이력이 생성됐으면 중복 환불 방지
         refunded_exists = CouponHistory.objects.filter(
@@ -134,6 +137,8 @@ class CouponManager:
                 print("   [DRY_RUN] 네이버 확정 시뮬레이션")
             
             # 2. 쿠폰 차감 (⭐ DB는 항상 업데이트)
+            extra = reservation.extra_people_qty
+            print(f"      🧪 인원추가 수량(DB): {extra}")
             duration = reservation.get_duration_minutes()
             old_remaining = customer.remaining_time
             customer.remaining_time -= duration

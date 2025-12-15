@@ -201,7 +201,7 @@ class NaverPlaceScraper:
                 for el in option_els:
                     txt = (el.get_attribute("title") or el.text or "").strip()
 
-                    m_qty = re.search(r"\((\d+)\)", txt)
+                    m_qty = re.search(r"인원\s*추가.*?\((\d+)\)", txt)
                     if not m_qty:
                         continue
 
@@ -252,6 +252,7 @@ class NaverPlaceScraper:
                 "price": price,
                 "reservation_status": status,
                 "is_coupon": is_coupon,
+                "extra_people_qty": extra_qty,
             }
 
             # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
@@ -324,6 +325,7 @@ class NaverPlaceScraper:
                         'price': booking['price'],
                         'reservation_status': booking['reservation_status'],
                         'is_coupon': booking['is_coupon'],
+                        "extra_people_qty": booking.get("extra_people_qty", 0),
                     }
                 )
                 
