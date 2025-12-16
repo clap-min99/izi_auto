@@ -4,10 +4,11 @@ SMS 문자 발송 (네이버 클라우드 플랫폼 SENS)
 import os
 import sys
 import django
+import time
 from datetime import time as dt_time
 
 import requests
-import time
+
 import hmac
 import hashlib
 import base64
@@ -27,8 +28,8 @@ class SMSSender:
     """SMS 문자 발송 (템플릿 기반)"""
 
     # 새벽 시간대(원하는대로 조정)
-    DAWN_START = time(0, 0)
-    DAWN_END = time(6, 0)
+    DAWN_START = dt_time(0, 0)
+    DAWN_END = dt_time(6, 0)
 
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -220,7 +221,7 @@ class SMSSender:
             }
 
             data = {
-                "type": "SMS",          # 단문 SMS
+                "type": "LMS",          # 단문 SMS
                 "contentType": "COMM",
                 "countryCode": "82",
                 "from": self.from_number,

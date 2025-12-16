@@ -443,7 +443,7 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
         content = (tpl.content if tpl else base.get("content", ""))
 
         ctx = {
-            "studio": "이지피아노",
+            "studio": "이지피아노스튜디오",
         }
 
         if reservation_id:
