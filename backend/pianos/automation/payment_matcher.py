@@ -41,7 +41,7 @@ class PaymentMatcher:
         """
         # 1. 예약자별로 그룹화하여 처리
         pending_customers = self._get_pending_customers()
-        
+
         if not pending_customers:
             return 0
         
@@ -116,9 +116,14 @@ class PaymentMatcher:
         Returns:
             int: 확정 처리된 예약 개수
         """
+        
         name = customer_info['name']
         total_amount = customer_info['total_amount']
         reservations = customer_info['reservations']
+        
+        # # 이미 처리된 예약이 하나라도 있으면 스킵
+        # if any(r.match_status in ('확정완료', '취소') for r in reservations):
+        #     return 0
         
         print(f"\n   🔍 고객 확인: {name}")
         print(f"      - 신청 예약: {len(reservations)}건")
@@ -246,7 +251,7 @@ class PaymentMatcher:
                     confirmed_reservations.append(res)
                     confirmed_count += 1
                     # 예약 확정 처리 루프 안에서, 확정 성공한 res마다 호출
-                    self._cancel_overlapping_pending_reservations(winner=res, reason="같은 시간대 선입금자 우선")
+                    # self._cancel_overlapping_pending_reservations(winner=res, reason="같은 시간대 선입금자 우선")
                 
                 # 2. 거래 내역 상태 업데이트 (★ 확정완료)
                 for trans in transactions:
@@ -486,7 +491,10 @@ class PaymentMatcher:
             # ✅ DB 업데이트 (원자적으로)
             with transaction.atomic():
                 reservation.reservation_status = '취소'
-                reservation.save(update_fields=['reservation_status', 'updated_at'])
+                reservation.save(update_fields=[
+                    'reservation_status',
+                    'updated_at'
+                ])
 
                 if trans:
                     trans.match_status = '취소'

@@ -67,6 +67,54 @@ class NaverPlaceScraper:
         except Exception as e:
             print(f"❌ 새 Chrome 실행 실패: {e}")
             raise
+    
+    def scroll_booking_list_to_bottom(self, max_wait_sec: int = 20, pause: float = 0.6):
+        """
+        예약 리스트 컨테이너(무한스크롤) 끝까지 내려서 모든 예약 로드
+        - 컨테이너: div.BookingListView__booking-list-table-wrap__IbvCi
+        """
+        container_sel = "div.BookingListView__booking-list-table-wrap__IbvCi"
+        container = self.driver.find_element(By.CSS_SELECTOR, container_sel)
+
+        start = time.time()
+        last_scroll_top = -1
+        last_scroll_height = 0
+        stable_count = 0  # 더 이상 변화 없을 때 카운트
+
+        while True:
+            # scrollHeight/scrollTop/clientHeight로 상태 확인
+            scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", container)
+            client_height = self.driver.execute_script("return arguments[0].clientHeight;", container)
+            scroll_top = self.driver.execute_script("return arguments[0].scrollTop;", container)
+
+            # 맨 아래로 스크롤 (컨테이너 자체)
+            self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", container)
+            time.sleep(pause)
+
+            new_scroll_top = self.driver.execute_script("return arguments[0].scrollTop;", container)
+            new_scroll_height = self.driver.execute_script("return arguments[0].scrollHeight;", container)
+
+            # 변화 감지: 높이/스크롤탑이 더 이상 안 변하면 종료 준비
+            if new_scroll_height == last_scroll_height and new_scroll_top == last_scroll_top:
+                stable_count += 1
+            else:
+                stable_count = 0
+
+            last_scroll_top = new_scroll_top
+            last_scroll_height = new_scroll_height
+
+            # 2~3번 연속 변화 없으면 끝까지 로드된 것으로 간주
+            if stable_count >= 2:
+                break
+
+            # 안전 타임아웃
+            if time.time() - start > max_wait_sec:
+                print("⚠️ 예약 리스트 스크롤 로드 타임아웃 (일단 진행)")
+                break
+
+        # 끝까지 내린 뒤 약간 위로 올려서 DOM 안정화(선택)
+        self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight - arguments[0].clientHeight;", container)
+        time.sleep(0.2)
 
     def scrape_all_bookings(self):
         """
@@ -75,6 +123,8 @@ class NaverPlaceScraper:
         Returns:
             list: 예약 데이터 리스트
         """
+        self.scroll_booking_list_to_bottom()
+
         try:
             # 예약 행들 찾기
             booking_rows = self.driver.find_elements(
@@ -267,6 +317,7 @@ class NaverPlaceScraper:
         기본 예약 리스트에서 특정 네이버 예약번호 행을 클릭해서
         오른쪽 '예약 상세정보' 사이드바를 연다.
         """
+        self.scroll_booking_list_to_bottom()  # ✅ 추가
         try:
             # 예약 행들 로딩될 때까지 기다리기
             rows = WebDriverWait(self.driver, 10).until(
@@ -406,7 +457,7 @@ class NaverPlaceScraper:
             self.driver.execute_script("arguments[0].click();", close_btn)
 
             # 6) 새로고침
-            self.driver.refresh()
+            self.refresh_page()
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
             )
@@ -496,7 +547,7 @@ class NaverPlaceScraper:
                 pass
 
             # 5) 새로고침
-            self.driver.refresh()
+            self.refresh_page()
             WebDriverWait(self.driver, 10).until(
                 EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
             )
@@ -516,6 +567,7 @@ class NaverPlaceScraper:
         """페이지 새로고침"""
         self.driver.refresh()
         time.sleep(2)
+        self.scroll_booking_list_to_bottom() 
 
     def close(self):
         """브라우저 종료"""
