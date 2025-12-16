@@ -1,5 +1,5 @@
 from rest_framework import serializers
-from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate, StudioPolicy
+from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate, StudioPolicy, AccountTransaction
 
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -116,6 +116,27 @@ class CouponCustomerRegisterOrChargeSerializer(serializers.Serializer):
         if value < 0:
             raise serializers.ValidationError("충전 시간은 0분 이상이어야 합니다.")
         return value
+
+class AccountTransactionSerializer(serializers.ModelSerializer):
+    deposit_time = serializers.SerializerMethodField()
+    status = serializers.CharField(source="match_status")
+
+    class Meta:
+        model = AccountTransaction
+        fields = [
+            "id",
+            "depositor_name",
+            "amount",
+            "deposit_time",
+            "status",
+        ]
+
+    def get_deposit_time(self, obj):
+        # 프론트에서 그대로 출력 가능
+        return f"{obj.transaction_date} {obj.transaction_time}"
+
+
+
 
 
 class MessageTemplateSerializer(serializers.ModelSerializer):

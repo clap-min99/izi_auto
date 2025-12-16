@@ -286,3 +286,26 @@
   white-space: pre-wrap;
   font-size: 13px;
 }
+
+.toast {
+  position: fixed;
+  bottom: 18px;
+  left: 18px;
+  padding: 12px 14px;
+  border-radius: 12px;
+  font-size: 13px;
+  z-index: 9999;
+  box-shadow: 0 8px 20px rgba(0,0,0,0.12);
+  border: 1px solid #e5e7eb;
+  background: #fff;
+  max-width: 320px;
+  white-space: pre-wrap;
+}
+
+.toastSuccess {
+  border-color: #bbf7d0;
+}
+
+.toastError {
+  border-color: #fecaca;
+}

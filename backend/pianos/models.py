@@ -276,6 +276,7 @@ class MessageTemplate(models.Model):
         PAYMENT_GUIDE_EXAM = "PAYMENT_GUIDE_EXAM", "입금 안내 - 입시기간"
         PAYMENT_GUIDE_PROXY = "PAYMENT_GUIDE_PROXY", "입금 안내 - 대리 예약"
         PAYMENT_GUIDE_ADD_PERSON = "PAYMENT_GUIDE_ADD_PERSON", "입금 안내 - 인원 추가"
+        PAYMENT_GUIDE_ADD_PERSON_AND_PROXY = "PAYMENT_GUIDE_ADD_PERSON_AND_PROXY", "입금 안내 - 대리 예약 & 인원 추가"
         CONFIRMATION = "CONFIRMATION", "확정 안내"
         CONFIRMATION_EXAM = "CONFIRMATION_EXAM", "확정 안내 - 입시기간"
         COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
