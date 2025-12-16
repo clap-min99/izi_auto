@@ -1,9 +1,10 @@
 # backend/pianos/views.py
 
-from rest_framework import viewsets, status
+from rest_framework import viewsets, status, generics
 from rest_framework.decorators import action, api_view
 from rest_framework.response import Response
 from rest_framework.filters import SearchFilter, OrderingFilter
+from rest_framework.permissions import IsAuthenticatedOrReadOnly
 from dateutil.relativedelta import relativedelta
 from django.shortcuts import get_object_or_404
 from django.utils import timezone
@@ -11,7 +12,7 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -20,6 +21,7 @@ from .serializers import (
     CouponCustomerRegisterOrChargeSerializer,
     MessageTemplateSerializer,
     StudioPolicySerializer,
+    AccountTransactionSerializer,
 )
 from .message_templates import DEFAULT_TEMPLATES, render_template
 
@@ -473,6 +475,26 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
         rendered = render_template(content, ctx)
         return Response({"rendered": rendered}, status=200)
     
+
+class AccountTransactionViewSet(viewsets.ReadOnlyModelViewSet):
+    """
+    계좌 입금 내역 조회용 ViewSet
+    - 팝빌에서 동기화되어 DB에 저장된 데이터 조회만 수행
+    """
+    queryset = AccountTransaction.objects.all()
+    serializer_class = AccountTransactionSerializer
+    permission_classes = [IsAuthenticatedOrReadOnly]
+
+    filter_backends = [SearchFilter]
+    search_fields = [
+        "depositor_name",
+        "memo",
+        "transaction_id",
+    ]
+
+    ordering = ["-transaction_date", "-transaction_time", "-id"]
+
+
 
 class StudioPolicyViewSet(viewsets.ViewSet):
     def get_object(self):

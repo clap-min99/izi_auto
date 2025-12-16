@@ -41,8 +41,14 @@ function MessageTemplatePage() {
 
   const hasSeededRef = useRef(false);
 
-  
-
+  const [toast, setToast] = useState({ open: false, message: '', type: 'success' });
+  const showToast = (message, type = 'success') => {
+  setToast({ open: true, message, type });
+  window.clearTimeout(showToast._t);
+  showToast._t = window.setTimeout(() => {
+    setToast((prev) => ({ ...prev, open: false }));
+  }, 2000);
+};
 
   const load = async () => {
     const data = await fetchMessageTemplates();
@@ -97,6 +103,12 @@ function MessageTemplatePage() {
   };
 
   const onSavePolicy = async () => {
+     
+    if (examStart && examEnd && examStart > examEnd) {
+      showToast('❌ 시작일은 종료일보다 늦을 수 없습니다.', 'error');
+      return;
+    }
+
     setPolicySaving(true);
     try {
       await updateStudioPolicy({
@@ -104,11 +116,13 @@ function MessageTemplatePage() {
         exam_end_date: examEnd || null,
       });
       await loadPolicy();
+      showToast('저장되었습니다.');
+    } catch (e) {
+      showToast(`❌ 저장 실패: ${e?.detail || e?.message || '알 수 없는 오류'}`, 'error');
     } finally {
       setPolicySaving(false);
     }
   };
-
 
   const textareaRef = useRef(null);
   const insertToken = (token) => {
@@ -312,7 +326,12 @@ function MessageTemplatePage() {
               </div>
             )}
           </>
-        )}
+            )}
+            {toast.open && (
+              <div className={[styles.toast, toast.type === 'error' ? styles.toastError : styles.toastSuccess].join(' ')}>
+                {toast.message}
+              </div>
+            )}
       </div>
     </div>
   );

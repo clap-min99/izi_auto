@@ -10,6 +10,7 @@ router.register(r'reservations', views.ReservationViewSet, basename='reservation
 router.register(r'coupon-customers', views.CouponCustomerViewSet, basename='coupon-customer')
 router.register(r"message-templates", views.MessageTemplateViewSet, basename="message-templates")
 router.register(r"studio-policy", views.StudioPolicyViewSet, basename="studio-policy")
+router.register(r'account-transactions', views.AccountTransactionViewSet, basename='account-transactions')
 
 urlpatterns = [
     # ViewSet URLs (자동 생성)
