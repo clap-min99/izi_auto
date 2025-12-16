@@ -335,6 +335,7 @@ class ReservationMonitor:
                 # 3. 쿠폰/일반 처리 딱 1번만 실행
                 if booking['is_coupon']:
                     success = bool(self.handle_coupon_booking(reservation, booking))  # ✅ 한 번만
+
                 else:
                     success = bool(self.handle_general_booking(reservation, booking))  # ✅ 한 번만
 
@@ -400,7 +401,7 @@ class ReservationMonitor:
 
         if not ok:
             print(f"      ❌ 쿠폰 처리 불가 → 취소 ({reason})")
-            self._cancel_coupon_booking(reservation, reason)
+            self._cancel_coupon_booking(reservation, reason, customer=customer)
             return True   # ✅ (취소 시도) = 네이버 조작 의도/발생
 
         print("      ✅ 쿠폰 조건 통과 → 즉시 확정/차감 진행")
@@ -412,13 +413,18 @@ class ReservationMonitor:
 
         if success:
             print("      ✅ 쿠폰 예약 확정/차감 완료")
+            
+            self.sms_sender.send_confirm_message(reservation)
+            reservation.complete_sms_status = '전송완료'
+            reservation.save(update_fields=['complete_sms_status', 'updated_at'])
+            
             return True
         
         print("      ❌ 쿠폰 확정 실패 → 취소")
         self._cancel_coupon_booking(reservation, "쿠폰 확정 처리 실패")
         return True      # ✅ 취소 조작 발생
     
-    def _cancel_coupon_booking(self, reservation, reason):
+    def _cancel_coupon_booking(self, reservation, reason, customer=None):
         """쿠폰 예약 취소 처리"""
         try:
             # 네이버 취소
@@ -432,7 +438,7 @@ class ReservationMonitor:
             reservation.save()
             
             # 취소 문자
-            self.sms_sender.send_cancel_message(reservation, reason)
+            self.sms_sender.send_cancel_message(reservation, reason, customer=customer)
             
             print(f"      ✅ 쿠폰 예약 취소 완료 ({reason})")
             
@@ -455,6 +461,7 @@ class ReservationMonitor:
                 'is_coupon': booking['is_coupon'],
                 'reservation_status': status,
                 'extra_people_qty': booking.get('extra_people_qty', 0),
+                'is_proxy': booking.get('is_proxy', False),
                 # 이미 저장된 데이터라면 문자상태 덮어쓰지 않게 주의!
                 # 처음 생성일 때만 기본값 넣고 싶으면 아래처럼 분기 권장
             }

@@ -167,6 +167,14 @@ class NaverPlaceScraper:
             )
             customer_name = name_el.text.strip()
 
+            is_proxy = False
+            try:
+                # 라벨이 있으면 보통 "대리예약" 텍스트가 들어감
+                label_els = row.find_elements(By.CSS_SELECTOR, "span.BookingListView__label__BzZL5")
+                is_proxy = any(("대리예약" in (el.text or "").strip()) for el in label_els)
+            except Exception:
+                is_proxy = False
+
             # 3) 전화번호
             phone_el = row.find_element(
                 By.CSS_SELECTOR,
@@ -238,6 +246,7 @@ class NaverPlaceScraper:
                 is_coupon = False
             
              # ✅ [추가] 인원 추가 옵션(국산/수입) 파싱 → base_amount 역산 → 실청구금액 계산
+            extra_qty = 0
             try:
                 extra_qty = 0
                 kind = None  # "국산" | "수입"
@@ -303,6 +312,7 @@ class NaverPlaceScraper:
                 "reservation_status": status,
                 "is_coupon": is_coupon,
                 "extra_people_qty": extra_qty,
+                "is_proxy": is_proxy,
             }
 
             # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
@@ -377,6 +387,7 @@ class NaverPlaceScraper:
                         'reservation_status': booking['reservation_status'],
                         'is_coupon': booking['is_coupon'],
                         "extra_people_qty": booking.get("extra_people_qty", 0),
+                        "is_proxy": booking.get("is_proxy", False),
                     }
                 )
                 

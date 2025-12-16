@@ -4,6 +4,14 @@ SMS 문자 발송 (네이버 클라우드 플랫폼 SENS)
 import os
 import sys
 import django
+from datetime import time as dt_time
+
+import requests
+import time
+import hmac
+import hashlib
+import base64
+from typing import Optional, Dict
 
 # Django 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -11,167 +19,234 @@ sys.path.insert(0, BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'izipiano.settings')
 django.setup()
 
+from pianos.models import MessageTemplate, StudioPolicy  # noqa
+from pianos.message_templates import DEFAULT_TEMPLATES, render_template  # noqa
+
 
 class SMSSender:
-    """SMS 문자 발송"""
-    
+    """SMS 문자 발송 (템플릿 기반)"""
+
+    # 새벽 시간대(원하는대로 조정)
+    DAWN_START = time(0, 0)
+    DAWN_END = time(6, 0)
+
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
+
+        # SENS 설정 (환경변수로 받는 걸 추천)
+        self.access_key = os.getenv("NCP_ACCESS_KEY", "")
+        self.secret_key = os.getenv("NCP_SECRET_KEY", "")
+        self.service_id = os.getenv("NCP_SENS_SERVICE_ID", "")
+        self.from_number = os.getenv("NCP_SENS_FROM", "")
+
+    # -----------------------------
+    # 1) 공통: 템플릿 로드/렌더/컨텍스트
+    # -----------------------------
+    def _get_template_text(self, code: str) -> str:
+        """
+        DB 템플릿(활성) 우선, 없으면 DEFAULT_TEMPLATES fallback
+        """
+        try:
+            tpl = MessageTemplate.objects.filter(code=code, is_active=True).first()
+            if tpl and tpl.content:
+                return tpl.content
+        except Exception:
+            # Django 초기화/DB 문제 시에도 DEFAULT로 fallback
+            pass
+
+        default = DEFAULT_TEMPLATES.get(code)
+        if not default:
+            # 최후 fallback
+            return "[{studio}] 메시지 템플릿이 설정되지 않았습니다."
+        return default["content"]
+
+    def _is_exam_period(self, reservation_date) -> bool:
+        policy = StudioPolicy.objects.first()
+        if not policy or not policy.exam_start_date or not policy.exam_end_date:
+            return False
+        return policy.exam_start_date <= reservation_date <= policy.exam_end_date
+
+    def _is_dawn_time(self, start_time) -> bool:
+        if not start_time:
+            return False
+        return self.DAWN_START <= start_time <= self.DAWN_END
+
+    def _build_ctx(self, reservation, extra: Optional[Dict] = None) -> dict:
+        # 템플릿 키들(DEFAULT_TEMPLATES 기준)에 맞춰 컨텍스트 구성
+        ctx = {
+            
+            "customer_name": getattr(reservation, "customer_name", ""),
+            "room_name": getattr(reservation, "room_name", ""),
+
+            "date": str(getattr(reservation, "reservation_date", "")),
+            "start_time": str(getattr(reservation, "start_time", ""))[:5],
+            "end_time": str(getattr(reservation, "end_time", ""))[:5],
+
+            "price": f"{getattr(reservation, 'price', 0):,}",
+            "add_person_count": str(getattr(reservation, "extra_people_qty", 0)),
+
+            # 취소/쿠폰 관련(없으면 기본값)
+            "remaining_minutes": str(extra.get("remaining_minutes", "")) if extra else "",
+            "duration_minutes": str(extra.get("duration_minutes", "")) if extra else "",
+            "coupon_category": str(extra.get("coupon_category", "")) if extra else "",
+            "room_category": str(extra.get("room_category", "")) if extra else "",
+        }
+        if extra:
+            ctx.update(extra)
+        return ctx
+
+    def _send_by_template(self, to_number: str, template_code: str, reservation=None, extra_ctx=None, msg_type=""):
+        text = self._get_template_text(template_code)
+        ctx = self._build_ctx(reservation, extra_ctx or {})
+        message = render_template(text, ctx)
         
-        # TODO: 네이버 클라우드 플랫폼 SENS 설정
-        self.access_key = ""  # Access Key
-        self.secret_key = ""  # Secret Key
-        self.service_id = ""  # Service ID
-        self.from_number = ""  # 발신번호
-    
+        print(f"      🧩 TEMPLATE = {template_code}  (msg_type={msg_type or template_code})")
+        if extra_ctx:
+            print(f"         + extra_ctx keys = {list(extra_ctx.keys())}")
+        
+        return self._send_sms(to_number, message, msg_type or template_code)
+
+    # -----------------------------
+    # 2) 상황별: 템플릿 선택 규칙
+    # -----------------------------
     def send_account_message(self, reservation):
         """
-        계좌 안내 문자 발송
+        [일반 예약] 입금 안내 문자:
+        - 기본 1통은 (대리/인원추가/둘다/기본) 중 택1
+        - 입시기간이면 PAYMENT_GUIDE_EXAM 1통 추가 발송
+        - 새벽시간이면 DAWN_CONFIRM 1통 추가 발송
         """
-        message = f"""[이지피아노스튜디오]
-예약이 접수되었습니다.
+        to_number = reservation.phone_number
 
-▶ 예약자: {reservation.customer_name}
-▶ 예약일시: {reservation.reservation_date} {reservation.start_time}
-▶ 예약룸: {reservation.room_name}
-▶ 요금: {reservation.price:,}원
+        is_proxy = bool(getattr(reservation, "is_proxy", False))
+        add_qty = int(getattr(reservation, "extra_people_qty", 0) or 0)
 
-입금 계좌: 농협 XXX-XXXX-XXXX-XX (예금주: 홍길동)
-※ 입금 확인 후 예약이 확정됩니다."""
-        
-        return self._send_sms(reservation.phone_number, message, "계좌 안내")
-    
+        # 기본 1통
+        if is_proxy and add_qty > 0:
+            base_code = "PAYMENT_GUIDE_ADD_PERSON_AND_PROXY"
+        elif is_proxy:
+            base_code = "PAYMENT_GUIDE_PROXY"
+        elif add_qty > 0:
+            base_code = "PAYMENT_GUIDE_ADD_PERSON"
+        else:
+            base_code = "PAYMENT_GUIDE"
+
+        ok = self._send_by_template(to_number, base_code, reservation, msg_type="계좌 안내(기본)")
+
+        # 입시기간이면 1통 더
+        if self._is_exam_period(reservation.reservation_date):
+            ok2 = self._send_by_template(to_number, "PAYMENT_GUIDE_EXAM", reservation, msg_type="계좌 안내(입시기간)")
+            ok = ok and ok2
+
+        # 새벽이면 1통 더
+        if self._is_dawn_time(reservation.start_time):
+            ok3 = self._send_by_template(to_number, "DAWN_CONFIRM", reservation, msg_type="새벽 예약 확인")
+            ok = ok and ok3
+
+        return ok
+
     def send_confirm_message(self, reservation):
         """
-        예약 확정 문자 발송
+        예약 확정 문자:
+        - 입시기간이면 CONFIRMATION_EXAM
+        - 아니면 CONFIRMATION
         """
-        message = f"""[이지피아노스튜디오]
-예약이 확정되었습니다!
+        to_number = reservation.phone_number
+        if self._is_exam_period(reservation.reservation_date):
+            code = "CONFIRMATION_EXAM"
+            msg_type = "예약 확정(입시기간)"
+        else:
+            code = "CONFIRMATION"
+            msg_type = "예약 확정"
 
-▶ 예약자: {reservation.customer_name}
-▶ 예약일시: {reservation.reservation_date} {reservation.start_time}~{reservation.end_time}
-▶ 예약룸: {reservation.room_name}
+        return self._send_by_template(to_number, code, reservation, msg_type=msg_type)
 
-※ 방문 시 신분증을 지참해주세요.
-※ 문의: 010-XXXX-XXXX"""
-        
-        return self._send_sms(reservation.phone_number, message, "예약 확정")
-    
-    def send_cancel_message(self, reservation, reason):
+    def send_cancel_message(self, reservation, reason: str):
         """
-        예약 취소 문자 발송 (통합: 환불 안내 포함)
+        취소는 reason 문자열 → 템플릿 코드 매핑.
+        매칭 안 되면 문자 발송하지 않고 False 반환(요청사항).
         """
-        message = f"""[이지피아노스튜디오]
-예약이 취소되었습니다.
+        to_number = reservation.phone_number
+        reason = reason or ""
 
-▶ 예약자: {reservation.customer_name}
-▶ 예약일시: {reservation.reservation_date} {reservation.start_time}
-▶ 취소 사유: {reason}
+        if "잔여" in reason and "부족" in reason:
+            extra_ctx = {
+                # 쿠폰 취소 템플릿에 remaining_minutes/duration_minutes가 있으면 여기에 채워 넣기
+                "duration_minutes": reservation.get_duration_minutes() if hasattr(reservation, "get_duration_minutes") else "",
+            }
+            return self._send_by_template(to_number, "COUPON_CANCEL_TIME", reservation, extra_ctx, msg_type="쿠폰 취소(잔여시간 부족)")
 
-※ 이미 입금하신 경우, 환불 계좌와 금액을 회신 주시면 영업일 기준 2~3일 내 환불 처리해드립니다.
+        if "불일치" in reason or "유형" in reason:
+            return self._send_by_template(to_number, "COUPON_CANCEL_TYPE", reservation, {}, msg_type="쿠폰 취소(유형 불일치)")
 
-※ 문의: 010-XXXX-XXXX"""
-        
-        return self._send_sms(reservation.phone_number, message, "예약 취소")
-    
-    def send_cancel_message_for_new_booking(self, booking, reason):
-        """
-        신규 예약에 대한 취소 문자 (Reservation 객체 없이)
-        """
-        message = f"""[이지피아노스튜디오]
-예약 신청이 취소되었습니다.
+        if "선입금" in reason or "동시간대" in reason:
+            return self._send_by_template(to_number, "NORMAL_CANCEL_CONFLICT", reservation, {}, msg_type="일반 취소(선입금 우선)")
 
-▶ 예약자: {booking['customer_name']}
-▶ 예약일시: {booking['reservation_date']} {booking['start_time']}
-▶ 취소 사유: {reason}
+        print(f"      ⚠️ 취소 템플릿 매칭 실패 → 문자 미발송 (reason='{reason}')")
+        return False
 
-※ 이미 입금하신 경우, 환불 계좌와 금액을 회신 주시면 영업일 기준 2~3일 내 환불 처리해드립니다.
 
-※ 문의: 010-XXXX-XXXX"""
-        
-        return self._send_sms(booking['phone_number'], message, "예약 취소")
+
     
     def _send_sms(self, to_number, message, msg_type):
-        """
-        실제 SMS 발송
-        
-        Args:
-            to_number: 수신 전화번호
-            message: 문자 내용
-            msg_type: 메시지 유형 (로그용)
-        
-        Returns:
-            bool: 발송 성공 여부
-        """
         if self.dry_run:
             print(f"      [DRY_RUN] 📤 {msg_type} 문자 시뮬레이션")
             print(f"         - 수신: {to_number}")
-            print(f"         - 내용: {message[:50]}...")
+            print(f"         - 내용: {message}")
             return True
-        
-        # TODO: 실제 네이버 클라우드 플랫폼 SENS API 호출
-        """
-        네이버 클라우드 플랫폼 SENS API 구현 예시:
-        
-        import requests
-        import time
-        import hmac
-        import hashlib
-        import base64
-        
+
         try:
             timestamp = str(int(time.time() * 1000))
-            url = f"https://sens.apigw.ntruss.com/sms/v2/services/{self.service_id}/messages"
-            
-            # Signature 생성
-            method = "POST"
+
             uri = f"/sms/v2/services/{self.service_id}/messages"
-            message_bytes = f"{method} {uri}\n{timestamp}\n{self.access_key}".encode('utf-8')
-            secret_bytes = self.secret_key.encode('utf-8')
+            url = f"https://sens.apigw.ntruss.com{uri}"
+
+            # Signature 생성
+            message_to_sign = f"POST {uri}\n{timestamp}\n{self.access_key}"
+            signing_key = self.secret_key.encode("utf-8")
             signature = base64.b64encode(
-                hmac.new(secret_bytes, message_bytes, digestmod=hashlib.sha256).digest()
-            ).decode('utf-8')
-            
-            # 헤더
+                hmac.new(
+                    signing_key,
+                    message_to_sign.encode("utf-8"),
+                    hashlib.sha256
+                ).digest()
+            ).decode("utf-8")
+
             headers = {
-                'Content-Type': 'application/json; charset=utf-8',
-                'x-ncp-apigw-timestamp': timestamp,
-                'x-ncp-iam-access-key': self.access_key,
-                'x-ncp-apigw-signature-v2': signature
+                "Content-Type": "application/json; charset=utf-8",
+                "x-ncp-apigw-timestamp": timestamp,
+                "x-ncp-iam-access-key": self.access_key,
+                "x-ncp-apigw-signature-v2": signature,
             }
-            
-            # 요청 데이터
+
             data = {
-                'type': 'SMS',  # SMS(단문) or LMS(장문)
-                'contentType': 'COMM',
-                'countryCode': '82',
-                'from': self.from_number,
-                'content': message,
-                'messages': [
+                "type": "SMS",          # 단문 SMS
+                "contentType": "COMM",
+                "countryCode": "82",
+                "from": self.from_number,
+                "content": message,
+                "messages": [
                     {
-                        'to': to_number.replace('-', '')  # 하이픈 제거
+                        "to": to_number.replace("-", "")
                     }
-                ]
+                ],
             }
-            
-            # API 호출
-            response = requests.post(url, json=data, headers=headers)
-            
+
+            response = requests.post(url, headers=headers, json=data, timeout=5)
+
             if response.status_code == 202:
                 print(f"      ✅ {msg_type} 문자 발송 성공")
                 return True
-            else:
-                print(f"      ❌ {msg_type} 문자 발송 실패: {response.status_code}")
-                print(f"         - 응답: {response.text}")
-                return False
-                
-        except Exception as e:
-            print(f"      ❌ {msg_type} 문자 발송 오류: {e}")
+
+            print(f"      ❌ {msg_type} 문자 발송 실패")
+            print(f"         - status: {response.status_code}")
+            print(f"         - body: {response.text}")
             return False
-        """
-        
-        print(f"      ✅ {msg_type} 문자 발송 완료 (실제 발송)")
-        return True
+
+        except Exception as e:
+            print(f"      ❌ {msg_type} 문자 발송 예외 발생: {e}")
+            return False
+
 
 
 def main():
