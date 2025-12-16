@@ -68,7 +68,7 @@ class AccountSyncManager:
             return ""
         return memo.split("|", 1)[0].strip()
 
-    def sync_transactions(self, lookback_days: int = 2) -> int:
+    def sync_transactions(self, lookback_days: int = 2, initial: bool = False) -> int:
         """
         팝빌에서 거래내역을 가져와 DB 저장.
         - lookback_days: 5분 주기라도 은행 반영 지연/재수집 대비로 1~2일 겹쳐 조회 추천
@@ -86,7 +86,7 @@ class AccountSyncManager:
                 print("   ℹ️ 새로운(또는 미저장) 거래 내역 없음")
                 return 0
 
-            new_count = self._save_transactions(items)
+            new_count = self._save_transactions(items, initial=initial)
             print(f"   ✅ 신규 저장: {new_count}건")
             return new_count
 
@@ -209,12 +209,13 @@ class AccountSyncManager:
     # DB save
     # -----------------------
 
-    def _save_transactions(self, items: List[Dict[str, Any]]) -> int:
+    def _save_transactions(self, items: List[Dict[str, Any]], initial: bool = False) -> int:
         """
         AccountTransaction 모델에 맞게 저장(get_or_create로 중복 제거).
         """
         new_count = 0
-
+        status = "확정완료" if initial else "확정전"
+        
         with db_transaction.atomic():
             for it in items:
                 obj, created = AccountTransaction.objects.get_or_create(
@@ -227,7 +228,7 @@ class AccountSyncManager:
                         "balance": it["balance"],
                         "depositor_name": it["depositor_name"],
                         "memo": it["memo"],
-                        "match_status": "확정전",
+                        "match_status": status,
                     },
                 )
 
