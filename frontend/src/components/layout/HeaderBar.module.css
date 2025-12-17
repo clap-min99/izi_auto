@@ -48,3 +48,143 @@
 .secondary {
   background: #f2e4c7;
 }
+
+/* ===== 자동화 토글 ===== */
+
+.toggleWrapper {
+  width: 110px;
+  height: 38px;
+  border-radius: 20px;
+  position: relative;
+  padding: 4px;
+  cursor: pointer;
+}
+
+/* ON / OFF 배경 */
+.on {
+  background-color: #22c55e;
+}
+.off {
+  background-color: #ef4444;
+}
+
+/* 토글 동그라미 */
+.toggleThumb {
+  width: 30px;
+  height: 30px;
+  background-color: #fff;
+  border-radius: 50%;
+  position: absolute;
+  top: 7px;
+  transition: transform 0.25s ease;
+}
+
+.on .toggleThumb {
+  transform: translateX(0);
+}
+
+.off .toggleThumb {
+  transform: translateX(72px);
+}
+
+/* 텍스트 */
+.toggleText {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  font-weight: bold;
+  color: #fff;
+  font-size: 18px;
+  pointer-events: none;
+  text-align: center;
+}
+
+/* ON일 때 텍스트 왼쪽 */
+.textOn {
+  right: 14px;
+}
+
+/* OFF일 때 텍스트 오른쪽 */
+.textOff {
+  left: 14px;
+}
+
+/* 비활성 */
+.disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.automationBanner {
+  width: 100%;
+  padding: 10px 14px;
+  font-weight: 700;
+  font-size: 14px;
+  border-bottom: 1px solid rgba(0,0,0,0.06);
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+/* 배너 색상 */
+.bannerOn {
+  background: rgba(34, 197, 94, 0.15);
+  color: #166534;
+}
+
+.bannerOff {
+  background: rgba(239, 68, 68, 0.15);
+  color: #991b1b;
+}
+
+.automationBadge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 4px 10px;
+  border-radius: 999px;
+
+  font-size: 18px;
+  font-weight: 900;
+}
+
+/* ON / OFF 색상 */
+.badgeOn {
+  background: rgba(34, 197, 94, 0.3);
+  color: #166534;
+}
+
+.badgeOff {
+  background: rgba(239, 68, 68, 0.3);
+  color: #991b1b;
+}
+
+/* 상태 점 */
+.statusDot {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+}
+
+.dotOn {
+  background-color: #22c55e;
+}
+
+.dotOff {
+  background-color: #ef4444;
+}
+
+.headerButtons {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 18px;
+}
+
+.buttonRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
