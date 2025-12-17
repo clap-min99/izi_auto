@@ -169,7 +169,8 @@ class Reservation(models.Model):
     price = models.IntegerField(verbose_name="요금")
     is_coupon = models.BooleanField(default=False, verbose_name="쿠폰여부")
     extra_people_qty = models.PositiveIntegerField(default=0, verbose_name="인원추가수량")
-    
+    is_proxy = models.BooleanField(default=False, verbose_name="대리예약여부")
+
     # 문자 발송 상태
     account_sms_status = models.CharField(
         max_length=20, 
@@ -307,3 +308,12 @@ class StudioPolicy(models.Model):
         db_table = "studio_policies"
         verbose_name = "스튜디오 정책"
         verbose_name_plural = "스튜디오 정책"
+
+
+class RoomPassword(models.Model):
+    room_name = models.CharField(max_length=100, unique=True, verbose_name="룸명")
+    room_pw = models.CharField(max_length=50, blank=True, default="", verbose_name="비밀번호")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    def __str__(self):
+        return f"{self.room_name}"

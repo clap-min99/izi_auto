@@ -11,6 +11,8 @@ router.register(r'coupon-customers', views.CouponCustomerViewSet, basename='coup
 router.register(r"message-templates", views.MessageTemplateViewSet, basename="message-templates")
 router.register(r"studio-policy", views.StudioPolicyViewSet, basename="studio-policy")
 router.register(r'account-transactions', views.AccountTransactionViewSet, basename='account-transactions')
+router.register(r"room-passwords", views.RoomPasswordViewSet)
+
 
 urlpatterns = [
     # ViewSet URLs (자동 생성)
