@@ -1,5 +1,6 @@
 import React, { useEffect, useState } from 'react';
 import DepositTable from './DepositTable';
+import Pagination from '../reservations/Pagination';
 import { fetchDeposits } from '../api/depositApi';
 
 const POLL_INTERVAL_MS = 5000;
@@ -7,17 +8,21 @@ const POLL_INTERVAL_MS = 5000;
 function DepositPage({ search }) {
   const [deposits, setDeposits] = useState([]);
   const [page, setPage] = useState(1);
-  const [count, setCount] = useState(0);
+  const [pageSize] = useState(20);
+  const [totalCount, setTotalCount] = useState(0);
+
+  const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
 
   useEffect(() => {
     let isCancelled = false;
 
-    const load = async () => {
+     const load = async () => {
       try {
-        const data = await fetchDeposits({ search, page });
+        const data = await fetchDeposits({ search, page, pageSize });
         if (isCancelled) return;
-        setDeposits(data.results || []); // DRF 기본 pagination 구조
-        setCount(data.count || 0);
+
+        setDeposits(data.results || []);
+        setTotalCount(data.count || 0);
       } catch (e) {
         console.error('❌ [계좌확인] 조회 실패', e);
       }
@@ -30,32 +35,19 @@ function DepositPage({ search }) {
       isCancelled = true;
       clearInterval(id);
     };
-  }, [search, page]);
+  }, [search, page, pageSize]);
 
   return (
-  <>
-    <DepositTable deposits={deposits} />
+    <>
+      <DepositTable deposits={deposits} />
 
-    <div style={{ marginTop: 12 }}>
-      <button
-        disabled={page === 1}
-        onClick={() => setPage(p => p - 1)}
-      >
-        이전
-      </button>
-
-      <span style={{ margin: '0 8px' }}>
-        {page} / {Math.ceil(count / 20)}
-      </span>
-
-      <button
-        disabled={page >= Math.ceil(count / 20)}
-        onClick={() => setPage(p => p + 1)}
-      >
-        다음
-      </button>
-    </div>
-  </> )
+      <Pagination
+        currentPage={page}
+        totalPages={totalPages}
+        onChange={setPage}
+      />
+    </>
+  );
 }
 
 export default DepositPage;

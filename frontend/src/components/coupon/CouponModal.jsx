@@ -1,32 +1,30 @@
-import React, { useEffect, useState } from 'react';
-import styles from './CouponModal.module.css';
-import { createOrChargeCouponCustomer } from '../api/couponCustomerApi';
-import { formatPhone } from '../utils/phoneFormat';
-
+import React, { useEffect, useState } from "react";
+import styles from "./CouponModal.module.css";
+import { createOrChargeCouponCustomer } from "../api/couponCustomerApi";
+import { formatPhone } from "../utils/phoneFormat";
 
 const COUPON_OPTIONS = [
-  { label: '10시간', value: 10, minutes: 600 },
-  { label: '20시간', value: 20, minutes: 1200 },
-  { label: '50시간', value: 50, minutes: 3000 },
-  { label: '100시간', value: 100, minutes: 6000 },
+  { label: "10시간", value: 10, minutes: 600 },
+  { label: "20시간", value: 20, minutes: 1200 },
+  { label: "50시간", value: 50, minutes: 3000 },
+  { label: "100시간", value: 100, minutes: 6000 },
 ];
 
 function CouponModal({ open, onClose, onSuccess }) {
   const [form, setForm] = useState({
-    customer_name: '',
-    phone_number: '',
-    piano_category: '국산', // '국산' | '수입'
-    coupon_type: 10,        // 10 | 20 | 50 | 100
-    charged_time: 600,      // 분
+    customer_name: "",
+    phone_number: "",
+    piano_category: "국산",
+    coupon_type: 10,
+    charged_time: 600,
   });
 
-  // ✅ 모달 닫으면 내용 초기화
   useEffect(() => {
     if (!open) {
       setForm({
-        customer_name: '',
-        phone_number: '',
-        piano_category: '국산',
+        customer_name: "",
+        phone_number: "",
+        piano_category: "국산",
         coupon_type: 10,
         charged_time: 600,
       });
@@ -36,13 +34,10 @@ function CouponModal({ open, onClose, onSuccess }) {
   if (!open) return null;
 
   const handleChange = (e) => {
-  const { name, value } = e.target;
+    const { name, value } = e.target;
 
-    if (name === 'phone_number') {
-      setForm((prev) => ({
-        ...prev,
-        phone_number: formatPhone(value),
-      }));
+    if (name === "phone_number") {
+      setForm((prev) => ({ ...prev, phone_number: formatPhone(value) }));
       return;
     }
 
@@ -62,7 +57,6 @@ function CouponModal({ open, onClose, onSuccess }) {
   const handleSubmit = async (e) => {
     e.preventDefault();
 
-    // API 명세: customer_name, phone_number, charged_time(분), coupon_type, piano_category :contentReference[oaicite:3]{index=3}
     await createOrChargeCouponCustomer({
       customer_name: form.customer_name,
       phone_number: form.phone_number,
@@ -72,15 +66,23 @@ function CouponModal({ open, onClose, onSuccess }) {
     });
 
     onClose();
-    onSuccess?.(); // 등록 후 목록 새로고침용
+    onSuccess?.();
   };
 
   return (
-    <div className={styles.backdrop} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div className={styles.modal}>
+    <div
+      className={styles.backdrop}
+      onClick={(e) => e.target === e.currentTarget && onClose()}
+    >
+      <div className={styles.modal} role="dialog" aria-modal="true">
         <div className={styles.header}>
-          <h2 className={styles.title}>쿠폰 등록</h2>
-          <button className={styles.closeButton} type="button" onClick={onClose}>×</button>
+          <div>
+            <h2 className={styles.title}>쿠폰 등록</h2>
+            <p className={styles.subTitle}>고객 정보와 쿠폰 종류를 입력하세요.</p>
+          </div>
+          <button className={styles.closeButton} type="button" onClick={onClose}>
+            ×
+          </button>
         </div>
 
         <form className={styles.form} onSubmit={handleSubmit}>
@@ -91,6 +93,7 @@ function CouponModal({ open, onClose, onSuccess }) {
               name="customer_name"
               value={form.customer_name}
               onChange={handleChange}
+              placeholder="홍길동"
             />
           </div>
 
@@ -127,18 +130,28 @@ function CouponModal({ open, onClose, onSuccess }) {
               onChange={handleCouponTypeChange}
             >
               {COUPON_OPTIONS.map((o) => (
-                <option key={o.value} value={o.value}>{o.label}</option>
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
               ))}
             </select>
           </div>
 
           <div className={styles.row}>
-            <label className={styles.label}>충전시간(분)</label>
-            <input className={styles.input} value={form.charged_time} disabled />
+            <label className={styles.label}>충전시간</label>
+            <div className={styles.readonlyWrap}>
+              <input className={styles.input} value={form.charged_time} disabled />
+              <span className={styles.unit}>분</span>
+            </div>
           </div>
 
           <div className={styles.actions}>
-            <button className={styles.submitButton} type="submit">등록</button>
+            <button className={styles.cancelButton} type="button" onClick={onClose}>
+              취소
+            </button>
+            <button className={styles.submitButton} type="submit">
+              등록
+            </button>
           </div>
         </form>
       </div>

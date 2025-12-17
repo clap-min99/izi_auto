@@ -13,7 +13,7 @@ function CouponCustomerPage({ search, refreshKey }) {
   const [historyOpen, setHistoryOpen] = useState(false);
   
   const [editingId, setEditingId] = useState(null);
-  const [editForm, setEditForm] = useState({ customer_name: '', phone_number: '' });
+  const [editForm, setEditForm] = useState({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: 0 });
   const [savingId, setSavingId] = useState(null);
 
   const totalPages = Math.max(1, Math.ceil(totalCount / pageSize));
@@ -56,11 +56,13 @@ function CouponCustomerPage({ search, refreshKey }) {
     setEditForm({
       customer_name: customer.customer_name ?? '',
       phone_number: customer.phone_number ?? '',
+      coupon_expires_at: customer.coupon_expires_at ?? '', // ✅ 추가
+      remaining_time: customer.remaining_time ?? 0,         // ✅ 추가 (분)
     });
   };
   const handleCancelEdit = () => {
     setEditingId(null);
-    setEditForm({ customer_name: '', phone_number: '' });
+    setEditForm({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: 0, });
   };
 
   const handleChangeEdit = (field, value) => {
@@ -71,8 +73,10 @@ function CouponCustomerPage({ search, refreshKey }) {
   const id = customer.id;
 
   const name = editForm.customer_name.trim();
-    const phone = editForm.phone_number.trim();
-
+  const phone = editForm.phone_number.trim();
+  const coupon_expires_at = editForm.coupon_expires_at.trim();
+  const remaining_time = Number(editForm.remaining_time);
+    if (Number.isNaN(remaining_time) || remaining_time < 0) return alert('잔여시간은 0 이상의 숫자여야 합니다.');
     if (!name) return alert('고객 이름을 입력해주세요.');
     if (!phone) return alert('전화번호를 입력해주세요.');
 
@@ -83,6 +87,8 @@ function CouponCustomerPage({ search, refreshKey }) {
       const updated = await updateCouponCustomer(id, {
         customer_name: name,
         phone_number: phone,
+        coupon_expires_at,
+        remaining_time,
       });
 
       // ✅ 리스트 즉시 반영
