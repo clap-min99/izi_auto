@@ -152,3 +152,13 @@
 
         React dev 서버가 떠 있을 때 Electron 창에 React 화면이 뜬다
         (리액트 서버 켜고 일렉트론 실행)
+
+---
+## clone 받고 할 일 
+1. 가상환경 설치
+
+2. 가상환경 켜기
+
+3. pip install -r requirements.txt
+
+2. frontend 폴더 -> npm install 

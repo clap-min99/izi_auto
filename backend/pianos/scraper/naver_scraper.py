@@ -68,6 +68,24 @@ class NaverPlaceScraper:
             print(f"❌ 새 Chrome 실행 실패: {e}")
             raise
     
+    def get_total_booking_count(self) -> int:
+        """
+        상단의 '예약 N건'에서 N을 읽어온다.
+        실패하면 -1 반환.
+        """
+        try:
+            # '예약' 라벨 옆 숫자 em (클래스는 바뀔 수 있어 contains로 잡음)
+            el = WebDriverWait(self.driver, 5).until(
+                EC.presence_of_element_located((
+                    By.XPATH,
+                    "//span[contains(.,'예약')]/em[contains(@class,'BookingListView__number')]"
+                ))
+            )
+            txt = (el.text or "").strip()
+            return int(re.sub(r"[^\d]", "", txt)) if txt else -1
+        except Exception:
+            return -1
+
     def scroll_booking_list_to_bottom(self, max_wait_sec: int = 20, pause: float = 0.6):
         """
         예약 리스트 컨테이너(무한스크롤) 끝까지 내려서 모든 예약 로드
@@ -75,6 +93,13 @@ class NaverPlaceScraper:
         """
         container_sel = "div.BookingListView__booking-list-table-wrap__IbvCi"
         container = self.driver.find_element(By.CSS_SELECTOR, container_sel)
+
+        # ✅ 항상 맨 위에서 시작 (중간 위치 시작 방지)
+        try:
+            self.driver.execute_script("arguments[0].scrollTop = 0;", container)
+            time.sleep(0.2)
+        except Exception:
+            pass
 
         start = time.time()
         last_scroll_top = -1
@@ -119,31 +144,69 @@ class NaverPlaceScraper:
     def scrape_all_bookings(self):
         """
         현재 페이지의 모든 예약 스크래핑
-        
-        Returns:
-            list: 예약 데이터 리스트
+        - 상단 '예약 N건'과 실제 row 수가 다르면 스크롤 재시도
         """
-        self.scroll_booking_list_to_bottom()
-
         try:
-            # 예약 행들 찾기
-            booking_rows = self.driver.find_elements(
-                By.CLASS_NAME, 
-                "BookingListView__contents-user__xNWR6"
-            )
-            
+            expected = self.get_total_booking_count()
+            if expected > 0:
+                print(f"📌 화면 표시 총 예약: {expected}건")
+            else:
+                print("⚠️ 총 예약 건수(예약 N건) 읽기 실패. row 기준으로만 진행")
+
+            max_retry = 3
+            last_count = -1
+
+            for attempt in range(1, max_retry + 1):
+                # 스크롤 끝까지 로드
+                self.scroll_booking_list_to_bottom(max_wait_sec=25, pause=0.7)
+
+                booking_rows = self.driver.find_elements(
+                    By.CLASS_NAME,
+                    "BookingListView__contents-user__xNWR6"
+                )
+                current = len(booking_rows)
+
+                print(f"📋 초기 예약 리스트: {current}건 (시도 {attempt}/{max_retry})")
+
+                # expected를 못 읽었으면 그냥 파싱
+                if expected <= 0:
+                    break
+
+                # 다 읽었으면 종료
+                if current >= expected:
+                    break
+
+                # 변화가 없으면(계속 50 등) 한번 더 강하게 스크롤 유도
+                if current == last_count:
+                    print("⚠️ 스크롤 후 row 수 변화 없음 → 추가 스크롤/대기 후 재시도")
+                    try:
+                        container_sel = "div.BookingListView__booking-list-table-wrap__IbvCi"
+                        container = self.driver.find_element(By.CSS_SELECTOR, container_sel)
+                        # 아래로 더 여러 번 쭉 밀기
+                        for _ in range(3):
+                            self.driver.execute_script("arguments[0].scrollTop = arguments[0].scrollHeight;", container)
+                            time.sleep(0.8)
+                    except Exception:
+                        pass
+
+                last_count = current
+
+            # 여기서 실제 파싱 진행
+            booking_rows = self.driver.find_elements(By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
             bookings = []
-            
-            # print(f"📄 예약 행 {len(booking_rows)}개 발견")
-            
             for row in booking_rows:
                 booking = self._parse_booking_row(row)
                 if booking:
                     bookings.append(booking)
-            
-            # print(f"✅ 예약 스크래핑 완료: {len(bookings)}건")
+
+            # 마지막 검증 로그
+            if expected > 0 and len(bookings) < expected:
+                print(f"⚠️ 스크래핑 결과 {len(bookings)}건 < 화면 표시 {expected}건 (추가 로드 실패 가능)")
+            else:
+                print(f"✅ 예약 스크래핑 완료: {len(bookings)}건")
+
             return bookings
-        
+
         except Exception as e:
             print(f"❌ 예약 스크래핑 실패: {e}")
             import traceback
