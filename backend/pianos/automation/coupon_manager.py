@@ -63,7 +63,11 @@ class CouponManager:
             return False
 
         # 3) 고객 찾기
-        customer = CouponCustomer.objects.filter(phone_number=reservation.phone_number).first()
+        room_category = get_room_category(getattr(reservation, "room_name", ""))
+        customer = CouponCustomer.objects.filter(
+            phone_number=reservation.phone_number,
+            piano_category=room_category,
+        ).first()
         if not customer:
             return False
 
@@ -92,7 +96,12 @@ class CouponManager:
         Returns: (has_balance, customer)
         """
         try:
-            customer = CouponCustomer.objects.get(phone_number=reservation.phone_number)
+            room_category = get_room_category(getattr(reservation, "room_name", ""))
+            # ✅ 룸 카테고리 기반으로 해당 지갑 선택
+            customer = CouponCustomer.objects.get(
+                phone_number=reservation.phone_number,
+                piano_category=room_category,
+            )
 
             # ✅ 쿠폰 메타 정보 없으면 불가
             if not customer.coupon_type or not customer.piano_category or not customer.coupon_expires_at:
@@ -104,7 +113,6 @@ class CouponManager:
                 return False, customer, "쿠폰 유효기간 만료"
 
             # ✅ 룸 매칭 체크
-            room_category = get_room_category(getattr(reservation, "room_name", ""))
             if room_category and customer.piano_category != room_category:
                 return False, customer, "쿠폰 종류(수입/국산) 불일치"
 
