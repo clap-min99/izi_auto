@@ -319,3 +319,17 @@ class RoomPassword(models.Model):
 
     def __str__(self):
         return f"{self.room_name}"
+    
+class AutomationControl(models.Model):
+    """
+    자동화 전체 ON/OFF(킬 스위치)
+    - enabled=True: monitor 자동화 전부 실행
+    - enabled=False: monitor 아무 것도 안 함(완전 정지)
+    """
+    enabled = models.BooleanField(default=False)  # 안전하게 기본 OFF 추천
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "automation_control"
+        verbose_name = "자동화 제어"
+        verbose_name_plural = "자동화 제어"

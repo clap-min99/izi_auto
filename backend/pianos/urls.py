@@ -12,6 +12,8 @@ router.register(r"message-templates", views.MessageTemplateViewSet, basename="me
 router.register(r"studio-policy", views.StudioPolicyViewSet, basename="studio-policy")
 router.register(r'account-transactions', views.AccountTransactionViewSet, basename='account-transactions')
 router.register(r"room-passwords", views.RoomPasswordViewSet)
+router.register(r"automation-control", views.AutomationControlViewSet, basename="automation-control")
+
 
 
 urlpatterns = [
