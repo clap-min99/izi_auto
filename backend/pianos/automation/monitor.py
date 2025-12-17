@@ -77,9 +77,6 @@ class ReservationMonitor:
         # 초기 예약 리스트 로드
         self.previous_bookings = self.scraper.scrape_all_bookings()
         print(f"📋 초기 예약 리스트: {len(self.previous_bookings)}건")
-        # 초기 확정대기 개수 기록
-        # self.previous_pending_count = self.scraper.get_pending_count()
-        # print(f"📌 초기 확정대기 개수: {self.previous_pending_count}")
 
         # 초기 예약들을 DB와 동기화
         self.sync_initial_bookings_to_db()
@@ -96,6 +93,9 @@ class ReservationMonitor:
             try:
                 current_time = datetime.now()
                 cycle_count += 1
+                # ✅ [여기] 30분 경과 입금대기 자동취소
+                did_actions = False
+                did_actions |= self.cancel_expired_pending_deposits()
                 
                 # ★ 1. 5분마다 계좌 내역 동기화
                 if current_time - self.last_account_sync >= self.account_sync_interval:
@@ -199,6 +199,66 @@ class ReservationMonitor:
         
         self.scraper.close()
         print("\n🔚 시스템 종료")
+
+    def cancel_expired_pending_deposits(self):
+        """
+        created_at 기준 30분 동안 입금이 확인되지 않은 '입금대기' 예약 자동 취소
+        - 대상: 일반예약(쿠폰 X) + 신청 + 계좌안내 문자 전송완료
+        - 네이버 화면 범위(오늘~한달) 안의 예약일만 취소 시도
+        """
+        now = timezone.now()
+        # 입금 대기 시간 조정 현재 30분
+        cutoff = now - timedelta(minutes=30)
+
+        today = timezone.localdate()
+        end_date = today + timedelta(days=30)  # 네이버 필터와 동일하게
+
+        qs = Reservation.objects.filter(
+            reservation_status="신청",
+            is_coupon=False,
+            account_sms_status="전송완료",
+            created_at__lte=cutoff,
+            reservation_date__gte=today,
+            reservation_date__lte=end_date,
+        ).order_by("created_at")
+
+        if not qs.exists():
+            return False
+
+        print(f"⏰ 30분 경과 입금대기 자동취소 대상: {qs.count()}건")
+        did_actions = False
+
+        for r in qs:
+            reason = "입금 기한(30분) 초과로 자동 취소되었습니다."
+
+            # 1) 네이버 취소(실제 실행)
+            if not self.dry_run:
+                ok = self.scraper.cancel_in_pending_tab(r.naver_booking_id, reason=reason)
+                if not ok:
+                    print(f"   ⚠️ 네이버 취소 실패: {r.naver_booking_id} ({r.customer_name})")
+                    continue
+            else:
+                print(f"   [DRY_RUN] 네이버 취소 시뮬레이션: {r.naver_booking_id} ({r.customer_name})")
+
+            # 이번 사이클에 '화면 조작이 있었다' 표시
+            did_actions = True
+
+            # 2) DB 취소 반영
+            r.reservation_status = "취소"
+            # cancel_reason 같은 필드가 있으면 같이 저장 (필드명 다르면 이 부분만 맞춰)
+            if hasattr(r, "cancel_reason"):
+                r.cancel_reason = reason
+            r.save(update_fields=["reservation_status", "updated_at"] + (["cancel_reason"] if hasattr(r, "cancel_reason") else []))
+
+            # 3) 취소 문자 1회 발송
+            self.sms_sender.send_cancel_message(r, reason)
+
+            # (선택) cancel_sms_status 같은 게 있으면 찍기
+            if hasattr(r, "cancel_sms_status"):
+                r.cancel_sms_status = "전송완료"
+                r.save(update_fields=["cancel_sms_status", "updated_at"])
+
+        return did_actions
     
     def _silent_payment_check(self):
         """
