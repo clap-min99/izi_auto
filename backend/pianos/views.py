@@ -162,16 +162,20 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
     
     def update(self, request, *args, **kwargs):
         """
-        쿠폰 고객 정보 수정 (이름, 전화번호만)
         PATCH /api/coupon-customers/{id}/
+
+        허용: customer_name, phone_number, coupon_expires_at, remaining_time(분)
+        remaining_time 변경 시 CouponHistory에 transaction_type='수동' 이력 1건 생성
         """
         partial = kwargs.pop('partial', False)
         instance = self.get_object()
         
         # 수정 가능한 필드만 추출
-        allowed_fields = ['customer_name', 'phone_number']
+        allowed_fields = ['customer_name', 'phone_number', 'coupon_expires_at', 'remaining_time']
         filtered_data = {k: v for k, v in request.data.items() if k in allowed_fields}
-        
+
+        before_remaining = instance.remaining_time
+
         serializer = CouponCustomerListSerializer(
             instance, 
             data=filtered_data, 
@@ -179,6 +183,26 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
         )
         serializer.is_valid(raise_exception=True)
         self.perform_update(serializer)
+
+        # ✅ remaining_time 변경이면 '수동' 이력 남기기
+        instance.refresh_from_db(fields=['remaining_time', 'customer_name'])
+        after_remaining = instance.remaining_time
+
+        if 'remaining_time' in filtered_data and after_remaining != before_remaining:
+            delta = after_remaining - before_remaining  # +면 충전, -면 차감
+
+            CouponHistory.objects.create(
+                customer=instance,
+                reservation=None,
+                customer_name=instance.customer_name,
+                room_name=None,
+                transaction_date=timezone.localdate(),
+                start_time=None,
+                end_time=None,
+                remaining_time=after_remaining,
+                used_or_charged_time=delta,
+                transaction_type='수동',
+            )
         
         return Response(serializer.data)
     
