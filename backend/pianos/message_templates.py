@@ -5,23 +5,34 @@ from typing import Dict, Any
 DEFAULT_TEMPLATES = {
     "PAYMENT_GUIDE": {
         "title": "입금 안내",
-        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
-                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
-                   "(예약: {date} {start_time}~{end_time}, {room_name})"
-    },
+        "content": "<이지피아노스튜디오>\n"
+                   "안녕하세요. 예약 감사드립니다^^\n"
+                   "스튜디오 대여료 입금 후 예약이 확정됩니다.\n"
+                   "입금계좌: 우리은행 1005604719577 이지은\n"
+                   "입금금액: {price}원\n"
+                    "(예약: {date} {start_time}~{end_time}, {room_name})\n"
+                    "- *주차를 원하시는 분은 사전에 꼭 문의 부탁드립니다. 무단 주차 하셔서 발생하는 문제에 대해서는 책임지지 않습니다.\n"
+                    "- *취소 및 환불은 이용시간 24시간 전까지만 가능하니 신중하게 신청해주세요."
+    },              
     "PAYMENT_GUIDE_EXAM": {
         "title": "입금 안내 - 입시기간",
-        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
-                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
-                   "※ 입시기간 예약은 확정 후 환불이 어렵습니다.\n"
-                   "(예약: {date} {start_time}~{end_time}, {room_name})"
+        "content": "<이지피아노스튜디오>\n"
+                   "입시기간 예약은 확정 후 환불이 어렵습니다\n"
+                   "입금 확인 후 예약이 확정되오니 신중하게 신청해주세요 "
     },
     "PAYMENT_GUIDE_ADD_PERSON": {
         "title": "입금 안내 - 인원 추가",
-        "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
-                   "{bank} {account}로 {price}원 입금 부탁드립니다.\n"
-                   "※ 인원 추가 {add_person_count}명 포함\n"
-                   "(예약: {date} {start_time}~{end_time}, {room_name})"},
+        "content": "<이지피아노스튜디오>\n"
+                   "안녕하세요. 예약 감사드립니다^^\n"
+                   "스튜디오 대여료 입금 후 예약이 확정됩니다.\n"
+                   "입금계좌: 우리은행 1005604719577 이지은\n"
+                   "입금금액: {price}원\n"
+                     "※ 인원 추가 {add_person_count}명 포함\n"
+                    "(예약: {date} {start_time}~{end_time}, {room_name})\n"
+                    "- *주차를 원하시는 분은 사전에 꼭 문의 부탁드립니다. 무단 주차 하셔서 발생하는 문제에 대해서는 책임지지 않습니다.\n"
+                    "- *취소 및 환불은 이용시간 24시간 전까지만 가능하니 신중하게 신청해주세요."
+    },
+                   
     "PAYMENT_GUIDE_PROXY": {
         "title": "입금 안내 - 대리 예약",
         "content": "[{studio}] {customer_name}님, 예약 요청 확인되었습니다.\n"
@@ -37,34 +48,61 @@ DEFAULT_TEMPLATES = {
                    "(예약: {date} {start_time}~{end_time}, {room_name})"},
     "CONFIRMATION": {
         "title": "확정 안내",
-        "content": "[{studio}] {customer_name}님, 입금 확인되어 예약 확정되었습니다.\n"
-                   "(예약: {date} {start_time}~{end_time}, {room_name}) 감사합니다."
+        "content": "[예약 확정 안내]\n"
+                    "사용하실 방은 {room_name}입니다\n"
+
+                    "이용시간 : {date} {start_time}~{end_time}\n"
+
+                    "@이용안내@\n"
+                    "출입문 비밀번호 : 824371*\n"
+                    "피아노 방 비밀번호 : 1742*\n"
+                    "화장실 위치 : 출입문 나가서 반층 위\n"
+                    "와이파이:U+NetC0E0 암호:KA9719#B76\n"
+
+                    "@편의시설@\n"
+                    "정수기, 음료, 다과, 티 무료 이용가능\n"
+                    "보면대, 라디에이터, 냉/난방기, 전신거울 각 방 구비\n"
+                    "촬영용 삼각대 정수기 옆 구비(자유롭게 사용하세요)\n"
+
+                    "@유의사항@\n"
+                    "음료는 반드시 보조 테이블에 놓고 이용해주세요\n"
+                    "악기 및 물품을 파손하는 행위에 대한 모든 책임은 이용자에게 있습니다\n"
+                    "공동으로 이용하는 시설로 기본적인 에티켓 준수만 부탁드리겠습니다\n"
+                    "액체가 남아있는 쓰레기는 정수기 테이블위에 올리고 가주세요\n"
+                    "**퇴실시 전등, 온열기 off 꼭 꼭 부탁드리고, 연습실 문은 닫고 나가주세요\n**"
+                    "사용시간은 꼭 지켜주시길 바랍니다.\n"
+
+                    "예약해주셔서 감사합니다:)"
     },
     "CONFIRMATION_EXAM": {
         "title": "확정 안내 - 입시기간",
-        "content": "[{studio}] {customer_name}님, 입금 확인되어 예약 확정되었습니다.\n"
+        "content": "<이지피아노스튜디오>\n" 
+                   "{customer_name}님, 입금 확인되어 예약 확정되었습니다.\n"
                    "※ 입시기간 예약은 환불 규정이 다르게 적용됩니다.\n"
                    "(예약: {date} {start_time}~{end_time}, {room_name}) 감사합니다."
     },
     "COUPON_CANCEL_TIME": {
         "title": "쿠폰 예약 취소 - 잔여시간 부족",
-        "content": "[{studio}] {customer_name}님, 쿠폰 잔여시간이 부족하여 예약이 취소되었습니다.\n"
+        "content": "<이지피아노스튜디오>\n" 
+                    "{customer_name}님, 쿠폰 잔여시간이 부족하여 예약이 취소되었습니다.\n"
                    "잔여: {remaining_minutes}분 / 요청: {duration_minutes}분\n"
                    "충전 후 다시 예약 부탁드립니다."
     },
     "COUPON_CANCEL_TYPE": {
         "title": "쿠폰 예약 취소 - 유형 불일치(수입/국산)",
-        "content": "[{studio}] {customer_name}님, 보유 쿠폰 유형({coupon_category})과 예약 룸 유형({room_category})이 달라 예약이 취소되었습니다.\n"
+        "content": "<이지피아노스튜디오>\n" 
+                    "{customer_name}님, 보유 쿠폰 유형({coupon_category})과 예약 룸 유형({room_category})이 달라 예약이 취소되었습니다.\n"
                    "확인 후 다시 예약 부탁드립니다."
     },
     "NORMAL_CANCEL_CONFLICT": {
         "title": "일반 예약 취소 - 동시간대 선입금 우선",
-        "content": "[{studio}] {customer_name}님, 동일 시간대 예약 중 선입금 완료 고객이 있어 현재 예약은 취소되었습니다.\n"
-                   "가능한 시간: {alt_times}"
+        "content": "<이지피아노스튜디오>\n" 
+                    "{customer_name}님, 동일 시간대 예약 중 선입금 완료 고객이 있어 현재 예약은 취소되었습니다."
     },
     "DAWN_CONFIRM": {
         "title": "새벽시간 예약 확인",
-        "content": "[{studio}] {customer_name}님, 새벽 시간대 예약이 접수되어 확인차 연락드립니다.\n"
+        "content": "<이지피아노스튜디오>\n" 
+                    "{customer_name}님, 새벽 시간대 예약이 접수되어 확인차 연락드립니다.\n"
                    "이용 의사가 맞으시면 “확인”으로 회신 부탁드립니다.\n"
                    "(예약: {date} {start_time}~{end_time})"
     },

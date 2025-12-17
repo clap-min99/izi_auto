@@ -22,7 +22,7 @@ from pianos.automation.sms_sender import SMSSender
 class ConflictChecker:
     """예약 충돌 확인 및 처리"""
     # 테스트 박수민, 하건수
-    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수"}
+    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수", "박성원"}
 
     def _is_allowed_customer(self, name: str) -> bool:
         return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES

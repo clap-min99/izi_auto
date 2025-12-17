@@ -11,7 +11,7 @@ import { fetchStudioPolicy, updateStudioPolicy } from '../api/studioPolicyApi';
 
 
 const VAR_CHIPS = [
-  '{studio}', '{customer_name}', '{room_name}', '{date}',
+  '{studio}', '{customer_name}', '{room_name}', '{room_pw}', '{date}',
   '{start_time}', '{end_time}', '{price}',
   '{remaining_minutes}', '{duration_minutes}',
   '{piano_category}', '{room_category}',

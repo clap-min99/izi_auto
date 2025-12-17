@@ -2,7 +2,7 @@ import React from 'react';
 import styles from './HeaderBar.module.css';
 import logo from '../../assets/logo.png';
 
-function HeaderBar({ onClickStart, onClickCoupon }) {
+function HeaderBar({ onClickStart, onClickCoupon, onClickRoomPw }) {
   return (
     <header className={styles.header}>
       
@@ -16,6 +16,9 @@ function HeaderBar({ onClickStart, onClickCoupon }) {
 
       {/* 오른쪽 버튼 영역 */}
       <div className={styles.headerButtons}>
+        <button className={`${styles.btn} ${styles.secondary}`} onClick={onClickRoomPw}>
+        방 비밀번호
+      </button>
         <button className={`${styles.btn} ${styles.secondary}`} onClick={onClickCoupon}>
           쿠폰등록
         </button>

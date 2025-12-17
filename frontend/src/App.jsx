@@ -9,6 +9,7 @@ import CouponModal from './components/coupon/CouponModal';
 // import { createOrChargeCouponCustomer } from './components/api/couponCustomerApi';
 import MessageTemplatePage from './components/message/MessageTemplatePage'; 
 import tabStyles from './components/layout/TabBar.module.css';
+import RoomPasswordModal from "./components/room/RoomPasswordModal";
 
 function App() {
   const [activeTab, setActiveTab] = useState('reservation');
@@ -18,6 +19,7 @@ function App() {
   const [prepaidSearch, setPrepaidSearch] = useState('');
   const [depositSearch, setDepositSearch] = useState('');
 
+  const [openRoomPw, setOpenRoomPw] = useState(false);
 
   // 쿠폰 모달, 쿠폰탭 새로고침
   const [isCouponOpen, setIsCouponOpen] = useState(false);
@@ -101,7 +103,14 @@ function App() {
             <HeaderBar
               onClickStart={() => {}}
               onClickCoupon={() => setIsCouponOpen(true)}
+              onClickRoomPw={() => setOpenRoomPw(true)}
             />
+
+            <RoomPasswordModal
+              open={openRoomPw}
+              onClose={() => setOpenRoomPw(false)}
+            />
+            
             <TabBar
               activeTab={activeTab}
               onChange={setActiveTab}

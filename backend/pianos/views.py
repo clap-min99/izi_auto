@@ -12,7 +12,7 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -22,6 +22,7 @@ from .serializers import (
     MessageTemplateSerializer,
     StudioPolicySerializer,
     AccountTransactionSerializer,
+    RoomPasswordSerializer,
 )
 from .message_templates import DEFAULT_TEMPLATES, render_template
 
@@ -450,10 +451,13 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
             r = Reservation.objects.filter(id=reservation_id).first()
             if r:
                 duration_minutes = r.get_duration_minutes()
-                
+                room_name = (r.room_name or "").strip()
+                rp = RoomPassword.objects.filter(room_name=room_name).first()
+                room_pw = rp.room_pw if rp else ""
                 ctx.update({
                     "customer_name": r.customer_name,
-                    "room_name": r.room_name,
+                     "room_name": room_name,
+                    "room_pw": room_pw, 
                     "date": str(r.reservation_date),
                     "start_time": str(r.start_time)[:5],
                     "end_time": str(r.end_time)[:5],
@@ -511,5 +515,9 @@ class StudioPolicyViewSet(viewsets.ViewSet):
         serializer.is_valid(raise_exception=True)
         serializer.save()
         return Response(serializer.data)
+
+class RoomPasswordViewSet(viewsets.ModelViewSet):
+    queryset = RoomPassword.objects.all().order_by("room_name")
+    serializer_class = RoomPasswordSerializer
 
     

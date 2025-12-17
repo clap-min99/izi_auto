@@ -14,6 +14,8 @@ import hashlib
 import base64
 from typing import Optional, Dict
 
+from pianos.models import RoomPassword
+
 # Django 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 sys.path.insert(0, BASE_DIR)
@@ -74,11 +76,16 @@ class SMSSender:
 
     def _build_ctx(self, reservation, extra: Optional[Dict] = None) -> dict:
         # 템플릿 키들(DEFAULT_TEMPLATES 기준)에 맞춰 컨텍스트 구성
+        room_name = getattr(reservation, "room_name", "")
+        pw = ""
+        if room_name:
+            rp = RoomPassword.objects.filter(room_name=room_name).first()
+            pw = rp.room_pw if rp else ""
         ctx = {
-            
             "customer_name": getattr(reservation, "customer_name", ""),
-            "room_name": getattr(reservation, "room_name", ""),
-
+            "room_name": room_name,
+            "room_pw": pw,
+            
             "date": str(getattr(reservation, "reservation_date", "")),
             "start_time": str(getattr(reservation, "start_time", ""))[:5],
             "end_time": str(getattr(reservation, "end_time", ""))[:5],
@@ -92,8 +99,8 @@ class SMSSender:
             "coupon_category": str(extra.get("coupon_category", "")) if extra else "",
             "room_category": str(extra.get("room_category", "")) if extra else "",
         }
-        if extra:
-            ctx.update(extra)
+        # if extra:
+        #     ctx.update(extra)
         return ctx
 
     def _send_by_template(self, to_number: str, template_code: str, reservation=None, extra_ctx=None, msg_type=""):

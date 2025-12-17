@@ -31,7 +31,7 @@ from django.utils import timezone
 
 class ReservationMonitor:
     """예약 실시간 모니터링 시스템 (통합)"""
-    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수"}  # ✅ 테스트 허용 명단
+    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수", "박성원"}  # ✅ 테스트 허용 명단
 
     def _is_allowed_customer(self, name: str) -> bool:
         return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
