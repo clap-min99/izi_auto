@@ -23,6 +23,24 @@ function formatPhone(value) {
   return `${digits.slice(0, 3)}-${digits.slice(3, 7)}-${digits.slice(7)}`;
 }
 
+function toDateInputValue(dateStr) {
+  if (!dateStr) return '';
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return '';
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, '0');
+  const dd = String(d.getDate()).padStart(2, '0');
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function minutesToHoursString(minutes) {
+  if (minutes == null || minutes === '') return '';
+  const h = Number(minutes) / 60;
+  if (!Number.isFinite(h)) return '';
+  return Number.isInteger(h) ? String(h) : String(parseFloat(h.toFixed(1)));
+}
+
+
 
 function CouponCustomerTable({
   customers,
@@ -112,8 +130,42 @@ function CouponCustomerTable({
 
                   <td>{c.piano_category ?? '-'}</td>
                   <td>{formatYYMMDD(c.coupon_registered_at)}</td>
-                  <td>{formatYYMMDD(c.coupon_expires_at)}</td>
-                  <td>{formatRemainingTime(c.remaining_time)}</td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        className={styles.editInput}
+                        type="date"
+                        value={toDateInputValue(editForm.coupon_expires_at)}
+                        onChange={(e) => onChangeEdit?.('coupon_expires_at', e.target.value)}
+                        onKeyDown={(e) => handleEditKeyDown(e, c)}
+                        disabled={isSaving}
+                      />
+                    ) : (
+                      formatYYMMDD(c.coupon_expires_at)
+                    )}
+                  </td>
+                  <td>
+                    {isEditing ? (
+                      <input
+                        className={styles.editInput}
+                        inputMode="decimal"
+                        placeholder="시간"
+                        value={minutesToHoursString(editForm.remaining_time)}
+                        onChange={(e) => {
+                          const v = e.target.value;
+                          if (v === '') return onChangeEdit?.('remaining_time', '');
+                          const hours = Number(v);
+                          if (!Number.isFinite(hours) || hours < 0) return;
+                          onChangeEdit?.('remaining_time', Math.round(hours * 60)); // ✅ 분으로 저장
+                        }}
+                        onKeyDown={(e) => handleEditKeyDown(e, c)}
+                        disabled={isSaving}
+                      />
+                    ) : (
+                      formatRemainingTime(c.remaining_time)
+                    )}
+                  </td>
+
 
                   <td>
                     <div className={styles.actionButtons}>

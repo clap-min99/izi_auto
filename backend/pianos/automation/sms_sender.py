@@ -169,7 +169,7 @@ class SMSSender:
 
         return self._send_by_template(to_number, code, reservation, msg_type=msg_type)
 
-    def send_cancel_message(self, reservation, reason: str):
+    def send_cancel_message(self, reservation, reason: str, customer=None):
         """
         취소는 reason 문자열 → 템플릿 코드 매핑.
         매칭 안 되면 문자 발송하지 않고 False 반환(요청사항).
@@ -178,12 +178,21 @@ class SMSSender:
         reason = reason or ""
 
         if "잔여" in reason and "부족" in reason:
+            remaining = ""
+            if customer is not None and hasattr(customer, "remaining_time"):
+                remaining = customer.remaining_time  # minutes
+
             extra_ctx = {
-                # 쿠폰 취소 템플릿에 remaining_minutes/duration_minutes가 있으면 여기에 채워 넣기
+                "remaining_minutes": str(remaining),
                 "duration_minutes": reservation.get_duration_minutes() if hasattr(reservation, "get_duration_minutes") else "",
             }
-            return self._send_by_template(to_number, "COUPON_CANCEL_TIME", reservation, extra_ctx, msg_type="쿠폰 취소(잔여시간 부족)")
-
+            return self._send_by_template(
+                to_number,
+                "COUPON_CANCEL_TIME",
+                reservation,
+                extra_ctx,
+                msg_type="쿠폰 취소(잔여시간 부족)"
+            )
         if "불일치" in reason or "유형" in reason:
             return self._send_by_template(to_number, "COUPON_CANCEL_TYPE", reservation, {}, msg_type="쿠폰 취소(유형 불일치)")
 
