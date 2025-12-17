@@ -10,6 +10,8 @@ import CouponModal from './components/coupon/CouponModal';
 import MessageTemplatePage from './components/message/MessageTemplatePage'; 
 import tabStyles from './components/layout/TabBar.module.css';
 import RoomPasswordModal from "./components/room/RoomPasswordModal";
+import { fetchAutomationControl, updateAutomationControl } from './components/api/automationControlApi';
+import { useEffect } from 'react';
 
 function App() {
   const [activeTab, setActiveTab] = useState('reservation');
@@ -24,6 +26,9 @@ function App() {
   // 쿠폰 모달, 쿠폰탭 새로고침
   const [isCouponOpen, setIsCouponOpen] = useState(false);
   const [couponRefreshKey, setCouponRefreshKey] = useState(0);
+
+  const [automationEnabled, setAutomationEnabled] = useState(false);
+  const [automationLoaded, setAutomationLoaded] = useState(false);
 
   // const handleSubmitCoupon = async (form) => {
   //   await createOrChargeCouponCustomer({
@@ -94,6 +99,39 @@ function App() {
     } else if (activeTab === 'message') {
       content = <MessageTemplatePage />; // ✅ 추가
     }
+  
+  useEffect(() => {
+    const loadAutomationState = async () => {
+      try {
+        const data = await fetchAutomationControl();
+        setAutomationEnabled(!!data.enabled);
+      } catch (e) {
+        console.error(e);
+      } finally {
+        setAutomationLoaded(true);
+      }
+    };
+    loadAutomationState();
+  }, []);
+
+  const handleToggleAutomation = async () => {
+  const next = !automationEnabled;
+
+  const ok = window.confirm(
+    next
+      ? '자동화를 시작하시겠습니까?'
+      : '자동화를 중지하시겠습니까?\n(프로그램이 완전히 멈춥니다)'
+  );
+  if (!ok) return;
+
+  try {
+    await updateAutomationControl(next);
+    setAutomationEnabled(next);
+  } catch (e) {
+    console.error(e);
+    alert('자동화 상태 변경에 실패했습니다.');
+  }
+};
 
   return (
     <>
@@ -101,7 +139,9 @@ function App() {
         header={
           <>
             <HeaderBar
-              onClickStart={() => {}}
+              automationEnabled={automationEnabled}
+              automationLoaded={automationLoaded}
+              onToggleAutomation={handleToggleAutomation}
               onClickCoupon={() => setIsCouponOpen(true)}
               onClickRoomPw={() => setOpenRoomPw(true)}
             />

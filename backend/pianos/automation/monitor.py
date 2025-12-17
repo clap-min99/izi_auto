@@ -19,7 +19,7 @@ sys.path.insert(0, BASE_DIR)
 os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'izipiano.settings')
 django.setup()
 
-from pianos.models import Reservation
+from pianos.models import Reservation, AutomationControl
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
 from pianos.automation.conflict_checker import ConflictChecker
@@ -91,6 +91,11 @@ class ReservationMonitor:
         cycle_count = 0
         while True:
             try:
+                # ✅ 자동화 OFF면 아무 것도 하지 않고 대기
+                ctrl = AutomationControl.objects.filter(id=1).first()
+                if not ctrl or not ctrl.enabled:
+                    time.sleep(5)
+                    continue
                 current_time = datetime.now()
                 cycle_count += 1
                 # ✅ [여기] 30분 경과 입금대기 자동취소
