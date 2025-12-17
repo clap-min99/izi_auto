@@ -229,6 +229,7 @@ class CouponHistory(models.Model):
         ('충전', '충전'),
         ('사용', '사용'),
         ('환불', '환불'),
+        ('수동', '수동'),
     ]
     
     customer = models.ForeignKey(
