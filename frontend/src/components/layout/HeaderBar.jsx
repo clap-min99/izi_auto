@@ -2,7 +2,7 @@ import React from 'react';
 import styles from './HeaderBar.module.css';
 import logo from '../../assets/logo.png';
 
-function HeaderBar({ onClickStart, onClickCoupon, onClickRoomPw }) {
+function HeaderBar({ automationEnabled, automationLoaded, onToggleAutomation, onClickCoupon, onClickRoomPw }) {
   return (
     <header className={styles.header}>
       
@@ -22,8 +22,24 @@ function HeaderBar({ onClickStart, onClickCoupon, onClickRoomPw }) {
         <button className={`${styles.btn} ${styles.secondary}`} onClick={onClickCoupon}>
           쿠폰등록
         </button>
-        <button className={`${styles.btn} ${styles.primary}`} onClick={onClickStart}>
-          시작
+        <button
+          onClick={onToggleAutomation}
+          disabled={!automationLoaded}
+          style={{
+            padding: '6px 12px',
+            fontWeight: 'bold',
+            backgroundColor: automationEnabled ? '#22c55e' : '#ef4444',
+            color: '#fff',
+            borderRadius: 6,
+            border: 'none',
+            cursor: automationLoaded ? 'pointer' : 'not-allowed',
+          }}
+        >
+          {automationLoaded
+            ? automationEnabled
+              ? '자동화 ON'
+              : '자동화 OFF'
+            : '상태 확인중...'}
         </button>
       </div>
 

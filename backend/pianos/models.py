@@ -284,6 +284,7 @@ class MessageTemplate(models.Model):
         COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
         COUPON_CANCEL_TYPE = "COUPON_CANCEL_TYPE", "쿠폰 취소(유형 불일치)"
         NORMAL_CANCEL_CONFLICT = "NORMAL_CANCEL_CONFLICT", "일반 취소(동시간대 선입금 우선)"
+        NORMAL_CANCEL_TIMEOUT = "NORMAL_CANCEL_TIMEOUT", "일반 취소(입금기한 초과)"
         DAWN_CONFIRM = "DAWN_CONFIRM", "새벽 예약 확인"
 
 
@@ -318,3 +319,17 @@ class RoomPassword(models.Model):
 
     def __str__(self):
         return f"{self.room_name}"
+    
+class AutomationControl(models.Model):
+    """
+    자동화 전체 ON/OFF(킬 스위치)
+    - enabled=True: monitor 자동화 전부 실행
+    - enabled=False: monitor 아무 것도 안 함(완전 정지)
+    """
+    enabled = models.BooleanField(default=False)  # 안전하게 기본 OFF 추천
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "automation_control"
+        verbose_name = "자동화 제어"
+        verbose_name_plural = "자동화 제어"

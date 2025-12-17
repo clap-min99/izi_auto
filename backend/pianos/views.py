@@ -12,7 +12,7 @@ from django.db import transaction
 from datetime import datetime
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -23,6 +23,7 @@ from .serializers import (
     StudioPolicySerializer,
     AccountTransactionSerializer,
     RoomPasswordSerializer,
+    AutomationControlSerializer
 )
 from .message_templates import DEFAULT_TEMPLATES, render_template
 
@@ -544,4 +545,18 @@ class RoomPasswordViewSet(viewsets.ModelViewSet):
     queryset = RoomPassword.objects.all().order_by("room_name")
     serializer_class = RoomPasswordSerializer
 
-    
+class AutomationControlViewSet(viewsets.ViewSet):
+    def get_object(self):
+        obj, _ = AutomationControl.objects.get_or_create(id=1)
+        return obj
+
+    def list(self, request):
+        obj = self.get_object()
+        return Response(AutomationControlSerializer(obj).data)
+
+    def partial_update(self, request, pk=None):
+        obj = self.get_object()
+        serializer = AutomationControlSerializer(obj, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(serializer.data)
