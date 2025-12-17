@@ -115,6 +115,13 @@ DEFAULT_TEMPLATES = {
         "content": "<이지피아노스튜디오>\n" 
                     "{customer_name}님, 동일 시간대 예약 중 선입금 완료 고객이 있어 현재 예약은 취소되었습니다."
     },
+    "NORMAL_CANCEL_TIMEOUT": {
+    "title": "일반 예약 취소 - 입금기한 초과",
+    "content": "<이지피아노스튜디오>\n"
+               "{customer_name}님, 입금 기한(30분) 초과로 예약이 자동 취소되었습니다.\n"
+               "(예약: {date} {start_time}~{end_time}, {room_name})\n"
+               "※ 이미 입금하신 경우, 환불받으실 계좌/예금주/은행/금액을 회신 주시면 확인 후 환불 도와드리겠습니다."
+    },
     "DAWN_CONFIRM": {
         "title": "새벽시간 예약 확인",
         "content": "안녕하세요 이지피아노스튜디오입니다:)\n"

@@ -198,6 +198,9 @@ class SMSSender:
 
         if "선입금" in reason or "동시간대" in reason:
             return self._send_by_template(to_number, "NORMAL_CANCEL_CONFLICT", reservation, {}, msg_type="일반 취소(선입금 우선)")
+        
+        if ("입금" in reason and ("기한" in reason or "30분" in reason)) or ("자동 취소" in reason and "입금" in reason):
+            return self._send_by_template(to_number, "NORMAL_CANCEL_TIMEOUT", reservation, {}, msg_type="일반 취소(입금기한 초과)")
 
         print(f"      ⚠️ 취소 템플릿 매칭 실패 → 문자 미발송 (reason='{reason}')")
         return False

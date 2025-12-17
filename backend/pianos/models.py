@@ -284,6 +284,7 @@ class MessageTemplate(models.Model):
         COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
         COUPON_CANCEL_TYPE = "COUPON_CANCEL_TYPE", "쿠폰 취소(유형 불일치)"
         NORMAL_CANCEL_CONFLICT = "NORMAL_CANCEL_CONFLICT", "일반 취소(동시간대 선입금 우선)"
+        NORMAL_CANCEL_TIMEOUT = "NORMAL_CANCEL_TIMEOUT", "일반 취소(입금기한 초과)"
         DAWN_CONFIRM = "DAWN_CONFIRM", "새벽 예약 확인"
 
 
