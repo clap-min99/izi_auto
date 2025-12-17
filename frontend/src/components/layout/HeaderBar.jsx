@@ -1,4 +1,5 @@
 import React from 'react';
+import { useState } from "react";
 import styles from './HeaderBar.module.css';
 import logo from '../../assets/logo.png';
 
@@ -16,35 +17,61 @@ function HeaderBar({ automationEnabled, automationLoaded, onToggleAutomation, on
 
       {/* 오른쪽 버튼 영역 */}
       <div className={styles.headerButtons}>
-        <button className={`${styles.btn} ${styles.secondary}`} onClick={onClickRoomPw}>
-        방 비밀번호
-      </button>
-        <button className={`${styles.btn} ${styles.secondary}`} onClick={onClickCoupon}>
-          쿠폰등록
-        </button>
-        <button
-          onClick={onToggleAutomation}
-          disabled={!automationLoaded}
-          style={{
-            padding: '6px 12px',
-            fontWeight: 'bold',
-            backgroundColor: automationEnabled ? '#22c55e' : '#ef4444',
-            color: '#fff',
-            borderRadius: 6,
-            border: 'none',
-            cursor: automationLoaded ? 'pointer' : 'not-allowed',
-          }}
-        >
-          {automationLoaded
-            ? automationEnabled
-              ? '자동화 ON'
-              : '자동화 OFF'
-            : '상태 확인중...'}
-        </button>
-      </div>
+        {/* ✅ 자동화 상태 라벨 (작은 배지) */}
+        {automationLoaded && (
+          <div
+            className={`${styles.automationBadge} ${
+              automationEnabled ? styles.badgeOn : styles.badgeOff
+            }`}
+          >
+            <span>
+              {automationEnabled ? '자동화 실행 중' : '자동화 중지 중'}
+            </span>
+            <span
+              className={`${styles.statusDot} ${
+                automationEnabled ? styles.dotOn : styles.dotOff
+              }`}
+            />
+          </div>
+        )}
 
+        {/* 기존 버튼들 */}
+        <div className={styles.buttonRow}>
+          <button
+            className={`${styles.btn} ${styles.secondary}`}
+            onClick={onClickRoomPw}
+          >
+            방 비밀번호
+          </button>
+
+          <button
+            className={`${styles.btn} ${styles.secondary}`}
+            onClick={onClickCoupon}
+          >
+            쿠폰등록
+          </button>
+
+          {/* 토글 */}
+          <div
+            className={`${styles.toggleWrapper} ${
+              automationEnabled ? styles.on : styles.off
+            } ${!automationLoaded ? styles.disabled : ''}`}
+            onClick={automationLoaded ? onToggleAutomation : undefined}
+          >
+            <span
+              className={`${styles.toggleText} ${
+                automationEnabled ? styles.textOn : styles.textOff
+              }`}
+            >
+              {automationEnabled ? 'ON' : 'OFF'}
+            </span>
+            <div className={styles.toggleThumb} />
+          </div>
+        </div>
+      </div>
     </header>
   );
 }
+
 
 export default HeaderBar;

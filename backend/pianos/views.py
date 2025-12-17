@@ -10,6 +10,7 @@ from django.shortcuts import get_object_or_404
 from django.utils import timezone
 from django.db import transaction
 from datetime import datetime
+from .automation.coupon_manager import get_room_category
 
 
 from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl
@@ -77,9 +78,10 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
             piano_category = serializer.validated_data['piano_category']
             today = timezone.localdate()
     
-            # 전화번호로 기존 고객 찾기
+            # 전화번호, 룸 유형으로 기존 고객 찾기
             customer, created = CouponCustomer.objects.get_or_create(
                 phone_number=phone_number,
+                piano_category=piano_category,
                 defaults={
                     'customer_name': customer_name,
                     'remaining_time': 0,
@@ -96,21 +98,14 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
             expire_months = months_map.get(int(coupon_type), 0)
             expires_at = today + relativedelta(months=expire_months)
 
-            customer, created = CouponCustomer.objects.get_or_create(
-                phone_number=phone_number,
-                defaults={
-                    "customer_name": customer_name,
-                    "remaining_time": 0,
-                }
-            )
-
             # 이름 업데이트 (변경되었을 수 있으니)
             if customer.customer_name != customer_name:
                 customer.customer_name = customer_name
             
             # ✅ 쿠폰 메타 정보 업데이트(등록/충전할 때 항상 최신 기준으로 덮어씀)
             customer.coupon_type = int(coupon_type)
-            customer.piano_category = piano_category
+            # 수입충전은 수입 쿠폰만, 국산 충전은 국산 쿠폰만 업데이트하기 위해 주석처리
+            # customer.piano_category = piano_category
             customer.coupon_registered_at = today
             customer.coupon_expires_at = expires_at
             customer.coupon_status = "활성"
@@ -488,15 +483,19 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
                     "end_time": str(r.end_time)[:5],
                     "price": getattr(r, "price", ""),
                     "duration_minutes": duration_minutes,  # ✅ 추가
-        })
+                })
 
-        # ✅ 쿠폰 고객(전화번호로 찾는 게 제일 안정적)
-        customer = CouponCustomer.objects.filter(phone_number=r.phone_number).first()
-        if customer:
-            ctx.update({
-                "remaining_minutes": customer.remaining_time,        # ✅ 추가
-                "piano_category": customer.piano_category or "",     # ✅ 추가 (수입/국산)
-            })
+                # ✅ 쿠폰 고객(전화번호로 찾는 게 제일 안정적)
+                room_category = get_room_category(getattr(r, "room_name", ""))
+                customer = CouponCustomer.objects.filter(
+                    phone_number=r.phone_number,
+                    piano_category=room_category,
+                ).first()
+                if customer:
+                    ctx.update({
+                        "remaining_minutes": customer.remaining_time,        # ✅ 추가
+                        "piano_category": customer.piano_category or "",     # ✅ 추가 (수입/국산)
+                    })
 
         if isinstance(extra_ctx, dict):
             ctx.update(extra_ctx)

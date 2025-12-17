@@ -28,13 +28,19 @@ class CouponCustomer(models.Model):
     piano_category = models.CharField(max_length=10, choices=PIANO_CATEGORY_CHOICES, null=True, blank=True)
 
     customer_name = models.CharField(max_length=100, verbose_name="예약자명")
-    phone_number = models.CharField(max_length=20, unique=True, verbose_name="전화번호")
+    phone_number = models.CharField(max_length=20, verbose_name="전화번호")
     remaining_time = models.IntegerField(default=0, verbose_name="잔여시간(분)")
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")
 
     class Meta:
         db_table = 'coupon_customers'
+        constraints = [
+            models.UniqueConstraint(
+                fields=["phone_number", "piano_category"],
+                name="uniq_coupon_wallet_per_phone_and_category",
+            )
+        ]
         verbose_name = '쿠폰 고객'
         verbose_name_plural = '쿠폰 고객 목록'
 
