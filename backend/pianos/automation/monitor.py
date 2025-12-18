@@ -82,7 +82,8 @@ class ReservationMonitor:
 
         # 2) 요청사항 없으면 스킵
         request_comment = (reservation.request_comment or "").strip()
-        if not request_comment:
+        
+        if request_comment in ("", "-", "—", "–"):
             return
 
         # 3) 이미 보냈으면 스킵
@@ -545,8 +546,8 @@ class ReservationMonitor:
         if success:
             print("      ✅ 쿠폰 예약 확정/차감 완료")
             
-            self.sms_sender.send_confirm_message(reservation)
-            reservation.complete_sms_status = '전송완료'
+            # self.sms_sender.send_confirm_message(reservation)
+            reservation.complete_sms_status = '쿠폰예약'
             reservation.save(update_fields=['complete_sms_status', 'updated_at'])
             
             return True

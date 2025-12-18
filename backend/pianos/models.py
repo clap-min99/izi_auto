@@ -324,10 +324,16 @@ class StudioPolicy(models.Model):
     exam_end_date = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # models.py (StudioPolicy)
+    exam_daily_start_time = models.TimeField(null=True, blank=True)
+    exam_daily_end_time = models.TimeField(null=True, blank=True)
+
+
     class Meta:
         db_table = "studio_policies"
         verbose_name = "스튜디오 정책"
         verbose_name_plural = "스튜디오 정책"
+
 
 
 class RoomPassword(models.Model):
