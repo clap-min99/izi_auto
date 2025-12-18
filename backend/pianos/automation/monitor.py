@@ -115,15 +115,8 @@ class ReservationMonitor:
                 
                 # 3. 새로운 예약 확인
                 new_bookings = self.find_new_bookings(current_bookings)
-                
-                # 3-1. 새 예약 중 '신청' 상태가 있는지 확인
-                has_new_application = any(
-                    b.get('reservation_status') == '신청'
-                    for b in new_bookings
-                )
 
                 # ---- (A) 새 예약 처리 파트 직전에 플래그 추가 ----
-                did_actions = False  # ✅ 네이버 화면 조작(확정/취소/refresh)이 있었는지
 
                 # ★ 새 예약이 있을 때만 상세 로그
                 if new_bookings:
@@ -169,7 +162,7 @@ class ReservationMonitor:
                     time.sleep(2)
                     self.scraper.scroll_booking_list_to_bottom()
                     # 이 사이클에서는 추가 입금/확정 로직 금지
-                    return
+                    continue
                 
                 # ---- (C) ✅ 조작이 있었으면 fresh scrape로 동기화 + previous 갱신 ----
                 if did_actions:
@@ -348,12 +341,26 @@ class ReservationMonitor:
         did_actions = False
 
         for booking in new_bookings:
-            # 테스트 박수민,하건수
-            allowed = self._is_allowed_customer(booking.get("customer_name"))
-            if not allowed:
-                print(f"      🛡️ 안전모드: '{booking.get('customer_name')}' 는 테스트 대상 아님 → 확정/취소/문자 동작 스킵")
-
             try:
+                # 네이버 상태 먼저 읽기
+                naver_status = booking.get('reservation_status')
+
+                # DB 저장은 무조건 한다
+                reservation = self.save_booking_to_db(booking, status=naver_status)
+
+                # 자동 처리 허용 상태는 오직 '신청'만
+                if naver_status != '신청':
+                    print(
+                        f"      ⏭️ 상태={naver_status} 예약 - DB만 저장하고 자동 처리 스킵 "
+                        f"({reservation.naver_booking_id})"
+                    )
+                    continue
+                # 테스트 박수민,하건수
+                # 테스트 대상 아니면 자동 처리 스킵 (DB는 이미 저장됨)
+                if not self._is_allowed_customer(booking.get("customer_name")):
+                    print("      🛡️ 안전모드: 테스트 대상 아님 → 자동 처리 스킵")
+                    continue
+
                 print(f"\n   📝 새 예약 처리: {booking['customer_name']} | {booking['room_name']}")
                 print(f"      - 네이버 ID: {booking['naver_booking_id']}")
                 print(f"      - 예약 시간: {booking['reservation_date']} {booking['start_time']}~{booking['end_time']}")
@@ -371,31 +378,14 @@ class ReservationMonitor:
                     # DB에는 저장(취소로)만 해두고,
                     reservation = self.save_booking_to_db(booking, status='취소')
 
-                    if allowed:
-                        if not self.dry_run:
-                            ok = self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
-                            did_actions |= bool(ok)   # ✅ 취소 성공했으면 조작 발생 True
-                        else:
-                            print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
-                        self.sms_sender.send_cancel_message(reservation, reason)
-                    else:
-                        print("      🛡️ 안전모드: 네이버 취소/문자 스킵")
-                        continue
-                    # 네이버 취소
                     if not self.dry_run:
-                        self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
+                        ok = self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
+                        did_actions |= bool(ok)   # ✅ 취소 성공했으면 조작 발생 True
                     else:
                         print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
-                    
-                    # DB에는 저장하되 취소 상태로
-                    reservation = self.save_booking_to_db(booking, status='취소')
                     # 취소 문자
-                    self.sms_sender.send_cancel_message(reservation, conflict_result['message'])
+                    self.sms_sender.send_cancel_message(reservation, reason)
                     continue
-                
-                # 2. DB 저장 (네이버에서 가져온 상태 그대로 저장)
-                naver_status = booking.get('reservation_status', '신청')
-                reservation = self.save_booking_to_db(booking, status=naver_status)
                 
                 # 3. 쿠폰/일반 처리 딱 1번만 실행
                 if booking['is_coupon']:
@@ -420,6 +410,7 @@ class ReservationMonitor:
                 import traceback
                 traceback.print_exc()
         return did_actions
+
     def handle_general_booking(self, reservation, booking):
         """
         일반(입금) 예약 처리
@@ -432,7 +423,7 @@ class ReservationMonitor:
             allowed = self._is_allowed_customer(reservation.customer_name)
             if not allowed:
                 print(f"      🛡️ 안전모드: '{reservation.customer_name}' 계좌문자/클릭 스킵")
-                return
+                return False
             
             # 1. 계좌 안내 문자 발송 (Reservation 객체 기준)
             self.sms_sender.send_account_message(reservation)

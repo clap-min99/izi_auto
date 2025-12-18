@@ -333,3 +333,36 @@ class AutomationControl(models.Model):
         db_table = "automation_control"
         verbose_name = "자동화 제어"
         verbose_name_plural = "자동화 제어"
+
+
+class NotificationLog(models.Model):
+    TYPE_COUPON_BALANCE_NEXTDAY = "COUPON_BALANCE_NEXTDAY"
+
+    NOTI_TYPE_CHOICES = [
+        (TYPE_COUPON_BALANCE_NEXTDAY, "Coupon balance next day (AlimTalk)"),
+    ]
+
+    noti_type = models.CharField(max_length=64, choices=NOTI_TYPE_CHOICES)
+    target_date = models.DateField(help_text="기준일(예: 전날 이용자에게 다음날 보내면, 전날 날짜)")
+    customer = models.ForeignKey("CouponCustomer", on_delete=models.CASCADE, related_name="notification_logs")
+
+    status = models.CharField(
+        max_length=16,
+        choices=[("PENDING", "PENDING"), ("SENT", "SENT"), ("FAILED", "FAILED"), ("SKIPPED", "SKIPPED")],
+        default="PENDING",
+    )
+
+    request_id = models.CharField(max_length=128, blank=True, default="")
+    error = models.TextField(blank=True, default="")
+
+    created_at = models.DateTimeField(default=timezone.now)
+    sent_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            # ✅ 같은 타입 + 같은 기준일 + 같은 고객은 1번만 (중복 발송 방지 핵심)
+            models.UniqueConstraint(fields=["noti_type", "target_date", "customer"], name="uniq_noti_once_per_day"),
+        ]
+
+    def __str__(self):
+        return f"{self.noti_type} {self.target_date} {self.customer_id} {self.status}"
