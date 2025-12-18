@@ -27,6 +27,9 @@ from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
 from pianos.automation.coupon_manager import CouponManager
 from django.utils import timezone
+# 알림톡(2)
+from django.conf import settings
+# from pianos.automation.alimtalk_sender import AlimTalkSender
 
 
 class ReservationMonitor:
@@ -49,9 +52,12 @@ class ReservationMonitor:
         self.scraper = NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
         self.conflict_checker = ConflictChecker(dry_run=dry_run)
         self.sms_sender = SMSSender(dry_run=dry_run)
+        # 알림톡(1)
+        # self.alimtalk_sender = AlimTalkSender()
         self.account_sync = AccountSyncManager(dry_run=dry_run)
         self.payment_matcher = PaymentMatcher(dry_run=dry_run)
         self.coupon_manager = CouponManager(dry_run=dry_run)
+
         
         # 이전 예약 리스트 (변경 감지용)
         self.previous_bookings = []
@@ -61,6 +67,72 @@ class ReservationMonitor:
         # 계좌 동기화 타이머
         self.last_account_sync = datetime.now()
         self.account_sync_interval = timedelta(minutes=5)
+    
+    # 알림톡(4)
+    def _fmt_dt(self, r: Reservation) -> str:
+        d = r.reservation_date
+        dow = ["월", "화", "수", "목", "금", "토", "일"][d.weekday()]
+        return f"{d.strftime('%Y-%m-%d')}({dow}) {r.start_time.strftime('%H:%M')}~{r.end_time.strftime('%H:%M')}"
+    
+    # 알림톡, 문자 섞여있음
+    def send_owner_request_notification_if_needed(self, reservation: Reservation):
+        # 1) 신청 상태만
+        if reservation.reservation_status != "신청":
+            return
+
+        # 2) 요청사항 없으면 스킵
+        request_comment = (reservation.request_comment or "").strip()
+        if not request_comment:
+            return
+
+        # 3) 이미 보냈으면 스킵
+        if (reservation.owner_request_noti_status or "전송전") != "전송전":
+            return
+
+        owner_phone = getattr(settings, "OWNER_PHONE", "")
+        if not owner_phone:
+            print("   ⚠️ settings.OWNER_PHONE 없음 → 사장님 알림 스킵")
+            return
+
+        content = (
+            "예약자가 요청사항을 남겼습니다.\n"
+            f"예약자명: {reservation.customer_name}\n"
+            f"전화번호: {reservation.phone_number}\n"
+            f"예약일시: {self._fmt_dt(reservation)}\n"
+            f"요청사항: {request_comment}"
+        )
+
+        try:
+            # =========================
+            # ✅ A안: 알림톡 (승인 나면 이걸 켜)
+            # =========================
+            # resp = self.alimtalk_sender.send_alimtalk(
+            #     to_phone=owner_phone,
+            #     template_code="OWNER_RESERVATION_NOTICE",  # 승인된 템플릿 코드로
+            #     content=content,
+            #     use_sms_failover=False,
+            # )
+            # ok = (200 <= resp.status_code < 300)
+
+            # =========================
+            # ✅ B안: 문자 (지금은 이걸 사용)
+            # =========================
+            self.sms_sender.send_plain_message(
+                to=owner_phone,
+                content=content,
+                msg_type="사장님 요청사항"
+            )
+            ok = True
+
+            reservation.owner_request_noti_status = "전송완료" if ok else "전송실패"
+            reservation.save(update_fields=["owner_request_noti_status", "updated_at"])
+
+        except Exception as e:
+            reservation.owner_request_noti_status = "전송실패"
+            reservation.save(update_fields=["owner_request_noti_status", "updated_at"])
+            print(f"   ❌ 사장님 요청사항 알림 실패: {e}")
+
+
     
     def run(self):
         """메인 루프"""
@@ -361,6 +433,9 @@ class ReservationMonitor:
                     print("      🛡️ 안전모드: 테스트 대상 아님 → 자동 처리 스킵")
                     continue
 
+                # ✅ 요청사항 알림(즉시 전송)
+                self.send_owner_request_notification_if_needed(reservation)
+
                 print(f"\n   📝 새 예약 처리: {booking['customer_name']} | {booking['room_name']}")
                 print(f"      - 네이버 ID: {booking['naver_booking_id']}")
                 print(f"      - 예약 시간: {booking['reservation_date']} {booking['start_time']}~{booking['end_time']}")
@@ -518,6 +593,7 @@ class ReservationMonitor:
                 'reservation_status': status,
                 'extra_people_qty': booking.get('extra_people_qty', 0),
                 'is_proxy': booking.get('is_proxy', False),
+                "request_comment": booking.get("request_comment", ""),
                 # 이미 저장된 데이터라면 문자상태 덮어쓰지 않게 주의!
                 # 처음 생성일 때만 기본값 넣고 싶으면 아래처럼 분기 권장
             }

@@ -308,6 +308,22 @@ class NaverPlaceScraper:
             except Exception:
                 is_coupon = False
             
+            # 8.5) ✅ 요청사항 파싱
+            request_comment = ""
+            try:
+                comment_el = row.find_elements(
+                    By.XPATH,
+                    ".//div[contains(@class,'BookingListView__comment__')]"  # 클래스 suffix 변동 대응
+                )
+                if comment_el:
+                    el = comment_el[0]
+                    txt = (el.get_attribute("title") or el.text or "").strip()
+                    # 줄바꿈/여백 정리
+                    txt = re.sub(r"\s+", " ", txt).strip()
+                    request_comment = txt
+            except Exception:
+                request_comment = ""
+                
              # ✅ [추가] 인원 추가 옵션(국산/수입) 파싱 → base_amount 역산 → 실청구금액 계산
             extra_qty = 0
             try:
@@ -376,6 +392,7 @@ class NaverPlaceScraper:
                 "is_coupon": is_coupon,
                 "extra_people_qty": extra_qty,
                 "is_proxy": is_proxy,
+                "request_comment": request_comment,
             }
 
             # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
@@ -451,6 +468,7 @@ class NaverPlaceScraper:
                         'is_coupon': booking['is_coupon'],
                         "extra_people_qty": booking.get("extra_people_qty", 0),
                         "is_proxy": booking.get("is_proxy", False),
+                        "request_comment": booking.get("request_comment", ""),
                     }
                 )
                 
