@@ -174,6 +174,7 @@ class Reservation(models.Model):
     end_time = models.TimeField(verbose_name="종료시간")
     price = models.IntegerField(verbose_name="요금")
     is_coupon = models.BooleanField(default=False, verbose_name="쿠폰여부")
+    request_comment = models.TextField(blank=True, default="", verbose_name="요청사항")
     extra_people_qty = models.PositiveIntegerField(default=0, verbose_name="인원추가수량")
     is_proxy = models.BooleanField(default=False, verbose_name="대리예약여부")
 
@@ -198,6 +199,17 @@ class Reservation(models.Model):
         default='신청',
         verbose_name="예약상태"
     )
+
+    # 사장님 알림톡 상태
+    owner_request_noti_status = models.CharField(
+    max_length=20,
+    default="전송전",
+    choices=[
+        ("전송전", "전송전"),
+        ("전송완료", "전송완료"),
+        ("전송실패", "전송실패"),
+    ],
+)
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
     updated_at = models.DateTimeField(auto_now=True, verbose_name="수정일시")

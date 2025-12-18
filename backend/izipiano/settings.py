@@ -161,3 +161,6 @@ POPBILL_IS_TEST = True
 POPBILL_IP_RESTRICT = False
 POPBILL_USE_STATIC_IP = False
 POPBILL_USE_LOCAL_TIME = True
+
+# 사장님 연락처 (요청사항 알림용)
+OWNER_PHONE = "01082767643"  # 하이픈 없이 권장

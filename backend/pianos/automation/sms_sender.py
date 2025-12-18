@@ -205,8 +205,18 @@ class SMSSender:
         print(f"      ⚠️ 취소 템플릿 매칭 실패 → 문자 미발송 (reason='{reason}')")
         return False
 
-
-
+    # 요청사항 알림 문자
+    def send_plain_message(self, to: str, content: str, msg_type: str = "사장님 알림"):
+        """
+        템플릿 없이 자유 문구를 보내는 문자
+        (사장님/운영자 내부 알림용)
+        """
+        to = (to or "").replace("-", "").strip()
+        return self._send_sms(
+            to_number=to,
+            message=content,
+            msg_type=msg_type,
+        )
     
     def _send_sms(self, to_number, message, msg_type):
         if self.dry_run:
