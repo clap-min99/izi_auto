@@ -25,7 +25,7 @@ function HeaderBar({ automationEnabled, automationLoaded, onToggleAutomation, on
             }`}
           >
             <span>
-              {automationEnabled ? '자동화 실행 중' : '자동화 중지 중'}
+              {automationEnabled ? '자동화 실행 중' : '일시 정지'}
             </span>
             <span
               className={`${styles.statusDot} ${
