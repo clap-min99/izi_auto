@@ -149,7 +149,8 @@ class MessageTemplateSerializer(serializers.ModelSerializer):
 class StudioPolicySerializer(serializers.ModelSerializer):
     class Meta:
         model = StudioPolicy
-        fields = ["exam_start_date", "exam_end_date", "updated_at"]
+        fields = ["exam_start_date", "exam_end_date","exam_daily_start_time",
+            "exam_daily_end_time", "updated_at"]
         read_only_fields = ["updated_at"]
 
 

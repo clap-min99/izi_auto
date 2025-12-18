@@ -63,16 +63,50 @@ class SMSSender:
             return "[{studio}] 메시지 템플릿이 설정되지 않았습니다."
         return default["content"]
 
-    def _is_exam_period(self, reservation_date) -> bool:
-        policy = StudioPolicy.objects.first()
+    def _is_exam_period(self, reservation) -> bool:
+        """
+        입시기간 판단(업그레이드 버전):
+        - 날짜 범위 안
+        - + 매일 시간대(exam_daily_start_time~exam_daily_end_time)와 예약 시간(start_time~end_time)이 겹치면 True
+        """
+        policy = self._get_policy()
         if not policy or not policy.exam_start_date or not policy.exam_end_date:
             return False
-        return policy.exam_start_date <= reservation_date <= policy.exam_end_date
+
+        r_date = getattr(reservation, "reservation_date", None)
+        s = getattr(reservation, "start_time", None)
+        e = getattr(reservation, "end_time", None)
+
+        if not r_date or not s or not e:
+            return False
+
+        # 1) 날짜 범위
+        if not (policy.exam_start_date <= r_date <= policy.exam_end_date):
+            return False
+
+        # 2) 시간 미설정이면 날짜만으로(하루종일)
+        w_start = getattr(policy, "exam_daily_start_time", None)
+        w_end = getattr(policy, "exam_daily_end_time", None)
+        if not w_start or not w_end:
+            return True
+
+        # 3) 겹침(overlap) 체크: [s,e) 와 [w_start,w_end) 가 겹치면 True
+        if w_start <= w_end:
+            return (s < w_end) and (e > w_start)
+
+        # 자정 넘어가는 시간대(예: 22:00~06:00)까지 허용하려면
+        return (s < w_end) or (e > w_start)
 
     def _is_dawn_time(self, start_time) -> bool:
         if not start_time:
             return False
         return self.DAWN_START <= start_time <= self.DAWN_END
+
+    def _get_policy(self):
+        return StudioPolicy.objects.first()
+    
+    
+
 
     def _build_ctx(self, reservation, extra: Optional[Dict] = None) -> dict:
         # 템플릿 키들(DEFAULT_TEMPLATES 기준)에 맞춰 컨텍스트 구성
@@ -142,10 +176,9 @@ class SMSSender:
         ok = self._send_by_template(to_number, base_code, reservation, msg_type="계좌 안내(기본)")
 
         # 입시기간이면 1통 더
-        if self._is_exam_period(reservation.reservation_date):
+        if self._is_exam_period(reservation):
             ok2 = self._send_by_template(to_number, "PAYMENT_GUIDE_EXAM", reservation, msg_type="계좌 안내(입시기간)")
             ok = ok and ok2
-
         # 새벽이면 1통 더
         if self._is_dawn_time(reservation.start_time):
             ok3 = self._send_by_template(to_number, "DAWN_CONFIRM", reservation, msg_type="새벽 예약 확인")
@@ -160,7 +193,7 @@ class SMSSender:
         - 아니면 CONFIRMATION
         """
         to_number = reservation.phone_number
-        if self._is_exam_period(reservation.reservation_date):
+        if self._is_exam_period(reservation):
             code = "CONFIRMATION_EXAM"
             msg_type = "예약 확정(입시기간)"
         else:
@@ -204,6 +237,20 @@ class SMSSender:
 
         print(f"      ⚠️ 취소 템플릿 매칭 실패 → 문자 미발송 (reason='{reason}')")
         return False
+    
+    def send_coupon_confirm_message(self, reservation):
+        """
+        쿠폰 예약 확정 문자(입시기간용)
+        - 템플릿: CONFIRMATION_COUPON
+        """
+        to_number = reservation.phone_number
+        return self._send_by_template(
+            to_number,
+            "CONFIRMATION_COUPON",
+            reservation,
+            msg_type="쿠폰 확정(입시기간)"
+        )
+
 
     # 요청사항 알림 문자
     def send_plain_message(self, to: str, content: str, msg_type: str = "사장님 알림"):

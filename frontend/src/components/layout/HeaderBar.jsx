@@ -1,5 +1,5 @@
 import React from 'react';
-import { useState } from "react";
+// import { useState } from "react";
 import styles from './HeaderBar.module.css';
 import logo from '../../assets/logo.png';
 
@@ -25,7 +25,7 @@ function HeaderBar({ automationEnabled, automationLoaded, onToggleAutomation, on
             }`}
           >
             <span>
-              {automationEnabled ? '자동화 실행 중' : '일시 정지'}
+              {automationEnabled ? '실행중' : '일시정지'}
             </span>
             <span
               className={`${styles.statusDot} ${

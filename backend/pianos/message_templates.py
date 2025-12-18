@@ -104,6 +104,12 @@ DEFAULT_TEMPLATES = {
                    "※ 입시기간 예약은 환불 규정이 다르게 적용됩니다.\n"
                    "(예약: {date} {start_time}~{end_time}, {room_name}) 감사합니다."
     },
+    "CONFIRMATION_COUPON": {
+        "title": "확정 안내 - 입시기간(쿠폰)",
+        "content": "<이지피아노스튜디오>\n" 
+                    "예약이 확정되었습니다\n"
+                    "※ 입시기간 예약은 취소, 변경이 절대 불가하오니 취소의 여지가 있을시 20분 내로 취소해주시기 바랍니다."
+    },
     "COUPON_CANCEL_TIME": {
         "title": "쿠폰 예약 취소 - 잔여시간 부족",
         "content": "<이지피아노스튜디오>\n" 

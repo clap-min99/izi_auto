@@ -299,6 +299,7 @@ class MessageTemplate(models.Model):
         PAYMENT_GUIDE_ADD_PERSON_AND_PROXY = "PAYMENT_GUIDE_ADD_PERSON_AND_PROXY", "입금 안내 - 대리 예약 & 인원 추가"
         CONFIRMATION = "CONFIRMATION", "확정 안내"
         CONFIRMATION_EXAM = "CONFIRMATION_EXAM", "확정 안내 - 입시기간"
+        CONFIRMATION_COUPON = "CONFIRMATION_COUPON", "확정 안내 - 입시기간(쿠폰)"
         COUPON_CANCEL_TIME = "COUPON_CANCEL_TIME", "쿠폰 취소(잔여시간 부족)"
         COUPON_CANCEL_TYPE = "COUPON_CANCEL_TYPE", "쿠폰 취소(유형 불일치)"
         NORMAL_CANCEL_CONFLICT = "NORMAL_CANCEL_CONFLICT", "일반 취소(동시간대 선입금 우선)"
@@ -324,10 +325,16 @@ class StudioPolicy(models.Model):
     exam_end_date = models.DateField(null=True, blank=True)
     updated_at = models.DateTimeField(auto_now=True)
 
+    # models.py (StudioPolicy)
+    exam_daily_start_time = models.TimeField(null=True, blank=True)
+    exam_daily_end_time = models.TimeField(null=True, blank=True)
+
+
     class Meta:
         db_table = "studio_policies"
         verbose_name = "스튜디오 정책"
         verbose_name_plural = "스튜디오 정책"
+
 
 
 class RoomPassword(models.Model):
@@ -354,33 +361,23 @@ class AutomationControl(models.Model):
 
 
 class NotificationLog(models.Model):
-    TYPE_COUPON_BALANCE_NEXTDAY = "COUPON_BALANCE_NEXTDAY"
+    TYPE_COUPON_USAGE_YESTERDAY_SMS = "COUPON_USAGE_YESTERDAY_SMS"
 
-    NOTI_TYPE_CHOICES = [
-        (TYPE_COUPON_BALANCE_NEXTDAY, "Coupon balance next day (AlimTalk)"),
-    ]
-
-    noti_type = models.CharField(max_length=64, choices=NOTI_TYPE_CHOICES)
-    target_date = models.DateField(help_text="기준일(예: 전날 이용자에게 다음날 보내면, 전날 날짜)")
+    noti_type = models.CharField(max_length=64)
+    target_date = models.DateField()
     customer = models.ForeignKey("CouponCustomer", on_delete=models.CASCADE, related_name="notification_logs")
 
     status = models.CharField(
         max_length=16,
-        choices=[("PENDING", "PENDING"), ("SENT", "SENT"), ("FAILED", "FAILED"), ("SKIPPED", "SKIPPED")],
+        choices=[("PENDING","PENDING"), ("SENT","SENT"), ("FAILED","FAILED"), ("SKIPPED","SKIPPED")],
         default="PENDING",
     )
-
     request_id = models.CharField(max_length=128, blank=True, default="")
     error = models.TextField(blank=True, default="")
-
     created_at = models.DateTimeField(default=timezone.now)
     sent_at = models.DateTimeField(null=True, blank=True)
 
     class Meta:
         constraints = [
-            # ✅ 같은 타입 + 같은 기준일 + 같은 고객은 1번만 (중복 발송 방지 핵심)
             models.UniqueConstraint(fields=["noti_type", "target_date", "customer"], name="uniq_noti_once_per_day"),
         ]
-
-    def __str__(self):
-        return f"{self.noti_type} {self.target_date} {self.customer_id} {self.status}"

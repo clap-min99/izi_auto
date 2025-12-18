@@ -11,7 +11,7 @@ import { fetchStudioPolicy, updateStudioPolicy } from '../api/studioPolicyApi';
 
 
 const VAR_CHIPS = [
-  '{studio}', '{customer_name}', '{room_name}', '{room_pw}', '{date}',
+  '{customer_name}', '{room_name}', '{room_pw}', '{date}',
   '{start_time}', '{end_time}', '{price}',
   '{remaining_minutes}', '{duration_minutes}',
   '{piano_category}', '{room_category}',
@@ -38,6 +38,8 @@ function MessageTemplatePage() {
   const [examStart, setExamStart] = useState('');
   const [examEnd, setExamEnd] = useState('');
   const [policySaving, setPolicySaving] = useState(false);
+  const [examDailyStartTime, setExamDailyStartTime] = useState('');
+  const [examDailyEndTime, setExamDailyEndTime] = useState('');
 
   const hasSeededRef = useRef(false);
 
@@ -73,7 +75,11 @@ function MessageTemplatePage() {
     const p = await fetchStudioPolicy();
     setExamStart(p?.exam_start_date ?? '');
     setExamEnd(p?.exam_end_date ?? '');
+    setExamDailyStartTime(p?.exam_daily_start_time ?? '');
+    setExamDailyEndTime(p?.exam_daily_end_time ?? '');
   };
+
+  
 
   useEffect(() => {
       load();
@@ -112,9 +118,11 @@ function MessageTemplatePage() {
     setPolicySaving(true);
     try {
       await updateStudioPolicy({
-        exam_start_date: examStart || null,
-        exam_end_date: examEnd || null,
-      });
+      exam_start_date: examStart || null,
+      exam_end_date: examEnd || null,
+      exam_daily_start_time: examDailyStartTime || null,
+      exam_daily_end_time: examDailyEndTime || null,
+    });
       await loadPolicy();
       showToast('저장되었습니다.');
     } catch (e) {
@@ -230,7 +238,27 @@ function MessageTemplatePage() {
         />
       </div>
     </div>
+      <div className={styles.policyRow} style={{ marginTop: 10 }}>
+  <div className={styles.policyField}>
+    <div className={styles.policyLabel}>시작시간</div>
+    <input
+      type="time"
+      className={styles.policyInput}
+      value={examDailyStartTime}
+      onChange={(e) => setExamDailyStartTime(e.target.value)}
+    />
+  </div>
 
+  <div className={styles.policyField}>
+    <div className={styles.policyLabel}>종료시간</div>
+    <input
+      type="time"
+      className={styles.policyInput}
+      value={examDailyEndTime}
+      onChange={(e) => setExamDailyEndTime(e.target.value)}
+    />
+  </div>
+</div>
     <button
       type="button"
       className={styles.secondaryButton}
