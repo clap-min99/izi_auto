@@ -24,7 +24,7 @@
 
         `deactivate`
 
-
+---
 
 ### 프론트엔드(react)
     
@@ -199,3 +199,10 @@
 7. 등록확인
     작업 스케줄러 라이브러리 클릭 
     가운데 목록에 알림톡 테스트, 다음 실행시간, 상태->준비 확인하기
+
+
+* 운영중 쿠폰 이력 문자 보내고 싶을 때
+ 위 방법대로 하되, 
+ 프로그램/스크립트: C:{폴더위치}\izi_auto\venv\Scripts\python.exe
+ 시작위치: C:{폴더위치}\izi_auto\backend
+ 인수에 `manage.py send_coupon_usage_sms --send` 넣으면 실제로 발송됨

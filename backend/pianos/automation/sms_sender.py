@@ -104,6 +104,8 @@ class SMSSender:
 
     def _get_policy(self):
         return StudioPolicy.objects.first()
+    
+    
 
 
     def _build_ctx(self, reservation, extra: Optional[Dict] = None) -> dict:
@@ -235,6 +237,20 @@ class SMSSender:
 
         print(f"      ⚠️ 취소 템플릿 매칭 실패 → 문자 미발송 (reason='{reason}')")
         return False
+    
+    def send_coupon_confirm_message(self, reservation):
+        """
+        쿠폰 예약 확정 문자(입시기간용)
+        - 템플릿: CONFIRMATION_COUPON
+        """
+        to_number = reservation.phone_number
+        return self._send_by_template(
+            to_number,
+            "CONFIRMATION_COUPON",
+            reservation,
+            msg_type="쿠폰 확정(입시기간)"
+        )
+
 
     # 요청사항 알림 문자
     def send_plain_message(self, to: str, content: str, msg_type: str = "사장님 알림"):

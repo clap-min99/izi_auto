@@ -545,11 +545,21 @@ class ReservationMonitor:
 
         if success:
             print("      ✅ 쿠폰 예약 확정/차감 완료")
-            
-            # self.sms_sender.send_confirm_message(reservation)
-            reservation.complete_sms_status = '쿠폰예약'
-            reservation.save(update_fields=['complete_sms_status', 'updated_at'])
-            
+
+            # ✅ 기본값: 쿠폰예약은 확정 문자 안 보냄
+            complete_status = "쿠폰예약"
+
+            # ✅ 단, 입시기간(날짜+시간대 겹침) 예약이면 20분내 취소 안내 문자 발송
+            if self.sms_sender._is_exam_period(reservation):
+                ok_sms = self.sms_sender.send_coupon_confirm_message(reservation)
+                complete_status = "전송완료" if ok_sms else "전송실패(쿠폰입시)"
+                print(f"      📩 쿠폰 입시기간 확정 문자: {'성공' if ok_sms else '실패'}")
+            else:
+                print("      ℹ️ 쿠폰 확정 문자 스킵(입시기간 아님)")
+
+            reservation.complete_sms_status = complete_status
+            reservation.save(update_fields=["complete_sms_status", "updated_at"])
+
             return True
         
         print("      ❌ 쿠폰 확정 실패 → 취소")
