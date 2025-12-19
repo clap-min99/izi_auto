@@ -137,13 +137,13 @@ function CouponModal({ open, onClose, onSuccess }) {
             </select>
           </div>
 
-          <div className={styles.row}>
+          {/* <div className={styles.row}>
             <label className={styles.label}>충전시간</label>
             <div className={styles.readonlyWrap}>
               <input className={styles.input} value={form.charged_time} disabled />
               <span className={styles.unit}>분</span>
             </div>
-          </div>
+          </div> */}
 
           <div className={styles.actions}>
             <button className={styles.cancelButton} type="button" onClick={onClose}>

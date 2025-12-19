@@ -9,7 +9,7 @@
 }
 
 .modal {
-  width: min(520px, calc(100vw - 32px));
+  width: min(450px, calc(100vw - 32px));
   background: #f7f7f4;
   border-radius: 10px;
   border: 1px solid rgba(0, 0, 0, 0.08);
@@ -76,10 +76,10 @@
 
 .input {
   height: 30px;
-  width: 80%;
+  width: 75%;
   background: #fff;
   border: 1px solid #ddd;
-  padding: 6px 10px;
+  padding: 6px 6px;
   font-size: 14px;
   border-radius: 6px;
 }

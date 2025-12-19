@@ -42,12 +42,12 @@ INSTALLED_APPS = [
     'django.contrib.sessions',
     'django.contrib.messages',
     'django.contrib.staticfiles',
-        # ⭐ 추가
+     
     'rest_framework',
     'corsheaders',
 ]
 
-# ⭐ REST Framework 설정 추가
+# REST Framework 설정 추가
 REST_FRAMEWORK = {
     'DEFAULT_PAGINATION_CLASS': 'rest_framework.pagination.PageNumberPagination',
     'PAGE_SIZE': 20,
@@ -56,7 +56,7 @@ REST_FRAMEWORK = {
     ],
 }
 
-# ⭐ CORS 설정 추가 (로컬 개발용)
+# CORS 설정 추가 (로컬 개발용)
 CORS_ALLOWED_ORIGINS = [
     "http://localhost:5173",  # React dev server
     "http://127.0.0.1:5173",
@@ -157,10 +157,10 @@ POPBILL_USER_ID = os.getenv("POPBILL_USER_ID")
 POPBILL_BANK_CODE = os.getenv("POPBILL_BANK_CODE")
 POPBILL_ACCOUNT_NUMBER = os.getenv("POPBILL_ACCOUNT_NUMBER")
 
-POPBILL_IS_TEST = True
+POPBILL_IS_TEST = True # 운영전환시 False로 전환해야함
 POPBILL_IP_RESTRICT = False
 POPBILL_USE_STATIC_IP = False
 POPBILL_USE_LOCAL_TIME = True
 
 # 사장님 연락처 (요청사항 알림용)
-OWNER_PHONE = "01082767643"  # 하이픈 없이 권장
+OWNER_PHONE = "01082767643"  # 사장님 번호로 바꿔야함 

@@ -80,7 +80,7 @@ class CouponManager:
             reservation=reservation,
             customer_name=customer.customer_name,
             room_name=reservation.room_name,            # 추적용
-            transaction_date=timezone.localdate(),      # 환불 처리일
+            transaction_date=reservation.reservation_date,      # 환불 처리일
             start_time=reservation.start_time,
             end_time=reservation.end_time,
             remaining_time=customer.remaining_time,
