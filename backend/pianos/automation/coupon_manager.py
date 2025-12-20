@@ -93,36 +93,42 @@ class CouponManager:
     def check_balance(self, reservation):
         """
         쿠폰 잔여시간 확인
-        Returns: (has_balance, customer)
+        Returns: (ok: bool, customer: CouponCustomer|None, reason: str)
         """
-        try:
-            room_category = get_room_category(getattr(reservation, "room_name", ""))
-            # ✅ 룸 카테고리 기반으로 해당 지갑 선택
-            customer = CouponCustomer.objects.get(
-                phone_number=reservation.phone_number,
-                piano_category=room_category,
-            )
+        room_category = get_room_category(getattr(reservation, "room_name", ""))  # '수입'|'국산'|None
 
-            # ✅ 쿠폰 메타 정보 없으면 불가
-            if not customer.coupon_type or not customer.piano_category or not customer.coupon_expires_at:
-                return False, customer, "쿠폰 정보 미등록"
+        # 0) room_category를 못 구하면 시스템/데이터 문제
+        if not room_category:
+            return False, None, "예약 룸 유형을 판별할 수 없음"
 
-            # ✅ 만료 갱신
-            customer.refresh_expiry_status(today=timezone.localdate())
-            if customer.coupon_status == "만료":
-                return False, customer, "쿠폰 유효기간 만료"
+        # 1) 같은 번호의 모든 쿠폰 지갑 조회 (수입/국산 둘 다 가능)
+        wallets = CouponCustomer.objects.filter(phone_number=reservation.phone_number)
 
-            # ✅ 룸 매칭 체크
-            if room_category and customer.piano_category != room_category:
-                return False, customer, "쿠폰 종류(수입/국산) 불일치"
-
-            duration = reservation.get_duration_minutes()
-            if customer.remaining_time >= duration:
-                return True, customer, ""
-            return False, customer, "잔여 시간 부족"
-
-        except CouponCustomer.DoesNotExist:
+        if not wallets.exists():
             return False, None, "쿠폰 고객 정보 없음"
+
+        # 2) 이 예약 룸에 맞는 지갑 선택
+        customer = wallets.filter(piano_category=room_category).first()
+
+        if not customer:
+            # 다른 지갑은 있다는 뜻 → 유형 불일치
+            other = wallets.first()
+            return False, other, "쿠폰 종류(수입/국산) 불일치"
+
+        # 3) 쿠폰 메타 체크
+        if not customer.coupon_type or not customer.piano_category or not customer.coupon_expires_at:
+            return False, customer, "쿠폰 정보 미등록"
+
+        # 4) 만료 체크
+        customer.refresh_expiry_status(today=timezone.localdate())
+        if customer.coupon_status == "만료":
+            return False, customer, "쿠폰 유효기간 만료"
+
+        # 5) 잔여시간 체크
+        duration = reservation.get_duration_minutes()
+        if customer.remaining_time >= duration:
+            return True, customer, ""
+        return False, customer, "잔여 시간 부족"
     
     @transaction.atomic
     def confirm_and_deduct(self, reservation, customer, scraper):

@@ -14,18 +14,17 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'izipiano.settings')
 django.setup()
 
 from django.db import transaction
+from django.conf import settings
+
 from pianos.models import Reservation, AccountTransaction
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
+from pianos.automation.utils import is_allowed_customer
 
 
 class PaymentMatcher:
     """입금 확인 및 예약 매칭"""
     # 테스트 박수민, 하건수
-    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수", "박성원"}
-
-    def _is_allowed_customer(self, name: str) -> bool:
-        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
     
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -228,7 +227,7 @@ class PaymentMatcher:
                 # 1. 모든 예약 확정
                 for res in reservations:
                     # 테스트 박수민, 하건수    
-                    if not self._is_allowed_customer(res.customer_name):
+                    if not is_allowed_customer(res.customer_name):
                         print(f"      🛡️ 안전모드: '{res.customer_name}' 확정 처리 스킵")
                         continue
                     # 네이버 확정 버튼 클릭
@@ -282,7 +281,7 @@ class PaymentMatcher:
         - 입금 내역 있으면 match_status='취소'로 표시
         """
         # ✅ 안전모드: winner가 허용된 고객이 아닐 때는 아무 것도 하지 않음
-        if not self._is_allowed_customer(winner.customer_name):
+        if not is_allowed_customer(winner.customer_name):
             return
 
         candidates = Reservation.objects.filter(
@@ -303,7 +302,7 @@ class PaymentMatcher:
         print(f"      🧹 확정 후 중복 신청 예약 취소: {len(losers)}건")
 
         for loser in losers:
-            if not self._is_allowed_customer(loser.customer_name):
+            if not is_allowed_customer(loser.customer_name):
                 print(f"         🛡️ 안전모드: '{loser.customer_name}' 취소 스킵")
                 continue
 
@@ -474,7 +473,7 @@ class PaymentMatcher:
         - 입금한 loser면 거래내역 match_status='취소'로 표시
         """
         # 테스트 박수민, 하건수
-        if not self._is_allowed_customer(reservation.customer_name):
+        if not is_allowed_customer(reservation.customer_name):
             print(f"         🛡️ 안전모드: '{reservation.customer_name}' 취소 처리 스킵")
             return False
         try:
