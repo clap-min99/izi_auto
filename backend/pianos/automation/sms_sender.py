@@ -15,6 +15,7 @@ import base64
 from typing import Optional, Dict
 
 from pianos.models import RoomPassword
+from pianos.automation.coupon_manager import get_room_category
 
 # Django 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -133,8 +134,7 @@ class SMSSender:
             "coupon_category": str(extra.get("coupon_category", "")) if extra else "",
             "room_category": str(extra.get("room_category", "")) if extra else "",
         }
-        # if extra:
-        #     ctx.update(extra)
+       
         return ctx
 
     def _send_by_template(self, to_number: str, template_code: str, reservation=None, extra_ctx=None, msg_type=""):
@@ -213,21 +213,30 @@ class SMSSender:
         if "잔여" in reason and "부족" in reason:
             remaining = ""
             if customer is not None and hasattr(customer, "remaining_time"):
-                remaining = customer.remaining_time  # minutes
+                remaining = customer.remaining_time
 
             extra_ctx = {
                 "remaining_minutes": str(remaining),
                 "duration_minutes": reservation.get_duration_minutes() if hasattr(reservation, "get_duration_minutes") else "",
             }
             return self._send_by_template(
-                to_number,
-                "COUPON_CANCEL_TIME",
-                reservation,
-                extra_ctx,
-                msg_type="쿠폰 취소(잔여시간 부족)"
+                to_number, "COUPON_CANCEL_TIME", reservation, extra_ctx, msg_type="쿠폰 취소(잔여시간 부족)"
             )
+
         if "불일치" in reason or "유형" in reason:
-            return self._send_by_template(to_number, "COUPON_CANCEL_TYPE", reservation, {}, msg_type="쿠폰 취소(유형 불일치)")
+            room_category = get_room_category(getattr(reservation, "room_name", "")) or ""
+            coupon_category = ""
+            if customer is not None:
+                coupon_category = getattr(customer, "piano_category", "") or ""
+
+            extra_ctx = {
+                "coupon_category": coupon_category,
+                "room_category": room_category,
+            }
+
+            return self._send_by_template(
+                to_number, "COUPON_CANCEL_TYPE", reservation, extra_ctx, msg_type="쿠폰 취소(유형 불일치)"
+            )
 
         if "선입금" in reason or "동시간대" in reason:
             return self._send_by_template(to_number, "NORMAL_CANCEL_CONFLICT", reservation, {}, msg_type="일반 취소(선입금 우선)")

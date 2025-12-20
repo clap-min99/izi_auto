@@ -5,6 +5,7 @@ import os
 import sys
 import django
 from datetime import datetime
+from django.conf import settings
 
 # Django 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -17,15 +18,12 @@ from django.db.models import Q
 from pianos.models import Reservation, AccountTransaction
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
+from pianos.automation.utils import is_allowed_customer
 
 
 class ConflictChecker:
     """예약 충돌 확인 및 처리"""
     # 테스트 박수민, 하건수
-    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수", "박성원"}
-
-    def _is_allowed_customer(self, name: str) -> bool:
-        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
     
     def __init__(self, dry_run=True):
         self.dry_run = dry_run
@@ -168,7 +166,7 @@ class ConflictChecker:
         print(f"      🚫 예약 취소: {reservation.customer_name} ({reason})")
 
         # ✅ 안전장치: 테스트 대상만 실제 취소/문자(테스트 박수민, 하건수)
-        if not self._is_allowed_customer(reservation.customer_name):
+        if not is_allowed_customer(reservation.customer_name):
             print(f"      🛡️ 안전모드: '{reservation.customer_name}' 취소/문자 스킵")
             return
         

@@ -26,6 +26,8 @@ from pianos.automation.conflict_checker import ConflictChecker
 from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
 from pianos.automation.coupon_manager import CouponManager
+from pianos.automation.utils import is_allowed_customer
+
 from django.utils import timezone
 # 알림톡(2)
 from django.conf import settings
@@ -34,11 +36,7 @@ from django.conf import settings
 
 class ReservationMonitor:
     """예약 실시간 모니터링 시스템 (통합)"""
-    ALLOWED_CUSTOMER_NAMES = {"박수민", "하건수", "박성원"}  # ✅ 테스트 허용 명단
 
-    def _is_allowed_customer(self, name: str) -> bool:
-        return (name or "").strip() in self.ALLOWED_CUSTOMER_NAMES
-    
     def __init__(self, naver_url, dry_run=True):
         """
         Args:
@@ -430,7 +428,7 @@ class ReservationMonitor:
                     continue
                 # 테스트 박수민,하건수
                 # 테스트 대상 아니면 자동 처리 스킵 (DB는 이미 저장됨)
-                if not self._is_allowed_customer(booking.get("customer_name")):
+                if not is_allowed_customer(booking.get("customer_name")):
                     print("      🛡️ 안전모드: 테스트 대상 아님 → 자동 처리 스킵")
                     continue
 
@@ -496,7 +494,7 @@ class ReservationMonitor:
         try:
             print(f"      💳 일반 예약 처리")
             # 테스트 박수민, 하건수
-            allowed = self._is_allowed_customer(reservation.customer_name)
+            allowed = is_allowed_customer(reservation.customer_name)
             if not allowed:
                 print(f"      🛡️ 안전모드: '{reservation.customer_name}' 계좌문자/클릭 스킵")
                 return False
@@ -705,13 +703,6 @@ class ReservationMonitor:
 def main():
     # 네이버 예약 관리 페이지 URL
     NAVER_URL = os.getenv('NAVER_RESERVATION_URL', '')
-    
-    if not NAVER_URL:
-        print("❌ NAVER_RESERVATION_URL 환경 변수가 설정되지 않았습니다.")
-        NAVER_URL = "https://partner.booking.naver.com/bizes/686937/booking-list-view?bookingBusinessId=686937"  # 기본값 (테스트용)
-    
-    # TODO: 실제 URL로 변경 필요
-    print("⚠️ NAVER_URL을 실제 주소로 변경해주세요!")
     
     # DRY_RUN 모드로 실행
     monitor = ReservationMonitor(
