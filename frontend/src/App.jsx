@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import AppLayout from './components/layout/AppLayout';
 import HeaderBar from './components/layout/HeaderBar';
 import TabBar from './components/layout/TabBar';
@@ -10,8 +10,10 @@ import CouponModal from './components/coupon/CouponModal';
 import MessageTemplatePage from './components/message/MessageTemplatePage'; 
 import tabStyles from './components/layout/TabBar.module.css';
 import RoomPasswordModal from "./components/room/RoomPasswordModal";
+import Toast from './components/common/Toast';
+
 import { fetchAutomationControl, updateAutomationControl } from './components/api/automationControlApi';
-import { useEffect } from 'react';
+
 
 function App() {
   const [activeTab, setActiveTab] = useState('reservation');
@@ -29,6 +31,7 @@ function App() {
 
   const [automationEnabled, setAutomationEnabled] = useState(false);
   const [automationLoaded, setAutomationLoaded] = useState(false);
+  const [toast, setToast] = useState('');
 
   // const handleSubmitCoupon = async (form) => {
   //   await createOrChargeCouponCustomer({
@@ -149,8 +152,14 @@ function App() {
             <RoomPasswordModal
               open={openRoomPw}
               onClose={() => setOpenRoomPw(false)}
+              onSaved={(msg) => setToast(msg)}
             />
-            
+            <Toast
+              message={toast}
+              onClose={() => setToast('')}
+              duration={1500}
+            />
+
             <TabBar
               activeTab={activeTab}
               onChange={setActiveTab}
@@ -162,11 +171,14 @@ function App() {
         footer={null}
       />
 
-     <CouponModal
-        open={isCouponOpen}
-        onClose={() => setIsCouponOpen(false)}
-        onSuccess={() => setCouponRefreshKey((k) => k + 1)} 
-      />
+    <CouponModal
+      open={isCouponOpen}
+      onClose={() => setIsCouponOpen(false)}
+      onSuccess={() => {
+        setCouponRefreshKey((k) => k + 1);
+        setToast("등록되었습니다.");
+      }}
+    />
     </>
   );
 }
