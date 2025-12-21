@@ -163,7 +163,7 @@ POPBILL_USE_STATIC_IP = False
 POPBILL_USE_LOCAL_TIME = True
 
 # 사장님 연락처 (요청사항 알림용)
-OWNER_PHONE = "01082767643"  # 사장님 번호로 바꿔야함 
+OWNER_PHONE = "01029912508"  # 사장님 번호로 바꿔야함 
 
 
 # True면 ALLOWED_CUSTOMER_NAMES만 자동 처리, False면 전체 자동 처리

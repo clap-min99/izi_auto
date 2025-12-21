@@ -243,6 +243,17 @@ class ReservationMonitor:
 
                     fresh_bookings = self.scraper.scrape_all_bookings()
 
+                    # ✅ (핵심) 화면 조작 중간에 들어온 예약이 있으면 여기서 추가 처리
+                    missed_new = self.find_new_bookings(fresh_bookings)
+                    if missed_new:
+                        print(f"🧷 조작 중 유입된 새 예약 {len(missed_new)}건 추가 처리")
+                        did_actions |= self.handle_new_bookings(missed_new)
+
+                        # 처리 과정에서 또 화면이 바뀌었을 수 있으니 한 번 더 최신화(선택이지만 권장)
+                        self.scraper.refresh_page()
+                        time.sleep(2)
+                        fresh_bookings = self.scraper.scrape_all_bookings()
+
                     # ✅ 최신 스냅샷으로 DB 상태 동기화
                     self.update_existing_bookings(fresh_bookings)
 
@@ -254,7 +265,7 @@ class ReservationMonitor:
                     self.previous_bookings = current_bookings
                     self.scraper.refresh_page()
 
-                time.sleep(7)
+                time.sleep(3)
                 
             except KeyboardInterrupt:
                 print("\n\n⏹️ 사용자에 의해 중단됨")
@@ -521,7 +532,7 @@ class ReservationMonitor:
         - 가능하면 confirm_and_deduct로 확정/차감/이력/DB업데이트까지 일괄 처리
         - 불가면 _cancel_coupon_booking로 취소
         """
-        allowed = self._is_allowed_customer(reservation.customer_name)
+        allowed = is_allowed_customer(reservation.customer_name)
         if not allowed:
             print(f"      🛡️ 안전모드: '{reservation.customer_name}' 쿠폰 확정/취소/문자 스킵 (DB 기록만)")
             return False

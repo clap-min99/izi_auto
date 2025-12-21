@@ -57,12 +57,12 @@ function CouponCustomerPage({ search, refreshKey }) {
       customer_name: customer.customer_name ?? '',
       phone_number: customer.phone_number ?? '',
       coupon_expires_at: customer.coupon_expires_at ?? '', // ✅ 추가
-      remaining_time: customer.remaining_time ?? 0,         // ✅ 추가 (분)
+      remaining_time: String(customer.remaining_time ?? 0),         // ✅ 추가 (분)
     });
   };
   const handleCancelEdit = () => {
     setEditingId(null);
-    setEditForm({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: 0, });
+    setEditForm({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: '0', });
   };
 
   const handleChangeEdit = (field, value) => {
@@ -75,7 +75,7 @@ function CouponCustomerPage({ search, refreshKey }) {
   const name = editForm.customer_name.trim();
   const phone = editForm.phone_number.trim();
   const coupon_expires_at = editForm.coupon_expires_at.trim();
-  const remaining_time = Number(editForm.remaining_time);
+  const remaining_time = parseFloat(String(editForm.remaining_time).replace(',','.'));
     if (Number.isNaN(remaining_time) || remaining_time < 0) return alert('잔여시간은 0 이상의 숫자여야 합니다.');
     if (!name) return alert('고객 이름을 입력해주세요.');
     if (!phone) return alert('전화번호를 입력해주세요.');

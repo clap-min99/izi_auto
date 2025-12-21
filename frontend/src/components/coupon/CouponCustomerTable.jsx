@@ -149,6 +149,8 @@ function CouponCustomerTable({
                       <input
                         className={styles.editInput}
                         inputMode="decimal"
+                        type="Number"
+                        step="0.1"
                         placeholder="시간"
                         value={minutesToHoursString(editForm.remaining_time)}
                         onChange={(e) => {

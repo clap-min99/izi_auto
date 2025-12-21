@@ -10,6 +10,9 @@
 
 .modal {
   position: relative;
+  max-height: 80vh;
+   display: flex;
+  flex-direction: column; 
   width: 600px;
   background: #d7e2d6;
   border-radius: 10px;
@@ -39,6 +42,11 @@
 .tableWrapper {
   background: #d7e2d6;
   padding-top: 6px;
+  flex: 1;                    /* 남는 공간을 테이블이 차지 */
+  overflow-y: auto;
+  max-height: 60vh;           /* 안전장치(선택) */
+  /* border: 1px solid #eee;     있으면 보기 좋음(선택) */
+  border-radius: 8px;         /* 선택 */
 }
 
 .table {
