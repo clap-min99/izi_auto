@@ -356,7 +356,7 @@ class NaverPlaceScraper:
                 gross_amount = price  # 네이버가 보여주는 총 금액(옵션 포함)
 
                 if extra_qty > 0 and kind in ("국산", "수입"):
-                    unit = 4000 if kind == "국산" else 5500
+                    unit = 4500 if kind == "국산" else 6000
                     base_amount = gross_amount - (unit * extra_qty)
 
                     # 이상치 방어: base가 0 이하이면 파싱 실패로 보고 옵션 무시
