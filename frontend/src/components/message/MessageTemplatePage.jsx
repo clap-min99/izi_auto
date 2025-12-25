@@ -107,25 +107,40 @@ function MessageTemplatePage() {
     if (!selected) return;
     setSaving(true);
     try {
-      await updateMessageTemplate(selected.id, {
-        content: draft,
-        is_active: isActive,
-      });
+      const payload = { content: draft, is_active: isActive };
+
+      // ✅ 서버 저장
+      const updated = await updateMessageTemplate(selected.id, payload);
+      // updateMessageTemplate가 응답으로 수정된 템플릿을 돌려주면 updated 사용 가능
+
+      // ✅ 1) 프론트 상태 즉시 반영 (응답이 없으면 payload로 반영)
+      setTemplates((prev) =>
+        prev.map((t) =>
+          t.id === selected.id
+            ? {
+                ...t,
+                ...(updated ?? payload), // 서버 응답이 있으면 그걸 우선
+              }
+            : t
+        )
+      );
+
+      // ✅ 2) 저장 후 draft를 "현재 저장된 값"으로 유지 (선택)
+      // setDraft(updated?.content ?? draft);
+      // setIsActive(updated?.is_active ?? isActive);
 
       showToast("저장되었습니다.");
     } catch (e) {
-      // ❌ 실패 토스트도 같이 넣어주면 UX 더 좋아짐
       showToast(
         `❌ 저장 실패: ${e?.detail || e?.message || "알 수 없는 오류"}`,
         "error"
       );
-
+      // 실패 시 서버값 다시 로드
       await load();
     } finally {
       setSaving(false);
     }
   };
-
   const onSavePolicy = async () => {
     if (examStart && examEnd && examStart > examEnd) {
       showToast("❌ 시작일은 종료일보다 늦을 수 없습니다.", "error");
