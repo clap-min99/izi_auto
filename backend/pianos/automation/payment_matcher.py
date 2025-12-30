@@ -15,7 +15,7 @@ django.setup()
 
 from django.db import transaction
 from django.conf import settings
-
+from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 from pianos.models import Reservation, AccountTransaction
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
@@ -23,13 +23,26 @@ from pianos.automation.utils import is_allowed_customer
 
 
 class PaymentMatcher:
-    """입금 확인 및 예약 매칭"""
-    # 테스트 박수민, 하건수
-    
-    def __init__(self, dry_run=True):
+    def __init__(self, dry_run=True, scraper=None, sms_sender=None, naver_url: str = ""):
         self.dry_run = dry_run
-        self.scraper = NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
-        self.sms_sender = SMSSender(dry_run=dry_run)
+        self.naver_url = naver_url
+
+        # ✅ 외부에서 주입되면 그걸 쓰고, 없으면(단독 실행 테스트)만 새로 만든다
+        self.scraper = scraper or NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
+        self.sms_sender = sms_sender or SMSSender(dry_run=dry_run)
+
+        print(f"🧪 PM.scraper.driver id={id(self.scraper.driver)}")
+        print(f"🧪 PM.handle={self.scraper.driver.current_window_handle}")
+        print(f"🧪 PM.handles={len(self.scraper.driver.window_handles)}")
+    def _is_window_gone(self, e: Exception) -> bool:
+        msg = str(e)
+        return (
+            isinstance(e, NoSuchWindowException)
+            or "no such window" in msg.lower()
+            or "target window already closed" in msg.lower()
+            or "web view not found" in msg.lower()
+        )
+
     
     def check_pending_payments(self):
         """
@@ -39,6 +52,8 @@ class PaymentMatcher:
             int: 확정 처리된 예약 개수
         """
         # 1. 예약자별로 그룹화하여 처리
+    
+    
         pending_customers = self._get_pending_customers()
 
         if not pending_customers:
@@ -207,64 +222,60 @@ class PaymentMatcher:
         return []
     
     def _confirm_reservations(self, reservations, transactions):
-        """
-        예약 확정 처리
-        
-        Args:
-            reservations: 확정할 예약 리스트
-            transactions: 매칭된 거래 내역 리스트
-        
-        Returns:
-            int: 확정 처리된 예약 개수
-        """
         print(f"      🔄 예약 확정 처리 중...")
-        
+
         confirmed_count = 0
         confirmed_reservations = []
-        
+
         try:
             with transaction.atomic():
-                # 1. 모든 예약 확정
                 for res in reservations:
-                    # 테스트 박수민, 하건수    
                     if not is_allowed_customer(res.customer_name):
                         print(f"      🛡️ 안전모드: '{res.customer_name}' 확정 처리 스킵")
                         continue
-                    # 네이버 확정 버튼 클릭
+
                     if not self.dry_run:
-                        success = self.scraper.confirm_in_pending_tab(res.naver_booking_id)
+                        try:
+                            success = self.scraper.confirm_in_pending_tab(res.naver_booking_id)
+
+                        except (NoSuchWindowException, WebDriverException) as e:
+                            # ✅ 창/탭 죽음이면: 새 창 복구 → 1회 재시도
+                            if self._is_window_gone(e) and self.naver_url:
+                                print("🧯 window 죽음 감지 → 새 창 복구 후 확정 1회 재시도")
+                                self.scraper.reopen_reservation_tab(
+                                    self.naver_url,
+                                    close_old=False,
+                                    as_window=True,
+                                )
+                                success = self.scraper.confirm_in_pending_tab(res.naver_booking_id)
+                            else:
+                                raise
+
                         if not success:
                             print(f"      ❌ 네이버 확정 실패: {res.naver_booking_id}")
                             continue
                     else:
                         print(f"      [DRY_RUN] 네이버 확정 시뮬레이션: {res.naver_booking_id}")
-                    
-                    # 완료 문자 발송
+
                     self.sms_sender.send_confirm_message(res)
-                    
-                    # 예약 상태 업데이트
+
                     res.reservation_status = '확정'
                     res.complete_sms_status = '전송완료'
                     res.save(update_fields=['reservation_status', 'complete_sms_status', 'updated_at'])
 
                     confirmed_reservations.append(res)
                     confirmed_count += 1
-                    # 예약 확정 처리 루프 안에서, 확정 성공한 res마다 호출
-                    # self._cancel_overlapping_pending_reservations(winner=res, reason="같은 시간대 선입금자 우선")
-                
-                # 2. 거래 내역 상태 업데이트 (★ 확정완료)
+
                 for trans in transactions:
-                    trans.match_status = '확정완료'  # ★
+                    trans.match_status = '확정완료'
                     trans.save(update_fields=['match_status', 'updated_at'])
-                    # ManyToMany 관계 설정
                     trans.matched_reservations.set(confirmed_reservations)
-            
+
             print(f"      ✅ 입금 확인 처리 완료!")
             print(f"         - 확정 예약: {confirmed_count}건")
             print(f"         - 매칭 거래: {len(transactions)}건")
-            
             return confirmed_count
-            
+
         except Exception as e:
             print(f"      ❌ 입금 확인 처리 오류: {e}")
             import traceback

@@ -4,6 +4,9 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
+from selenium.common.exceptions import WebDriverException
+
+from datetime import datetime
 
 import time
 import os
@@ -666,3 +669,120 @@ class NaverPlaceScraper:
         if self.driver:
             self.driver.quit()
             print("🔚 브라우저 종료")
+    
+    def _log_session_recover(self, before_handles, after_handles, new_handle):
+        ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        cwd = os.getcwd()
+        path = os.path.join(cwd, "session_recover.log")
+        with open("session_recover.log", "a", encoding="utf-8") as f:
+            f.write(
+                f"[{ts}] SESSION RECOVER\n"
+                f"  before_handles={before_handles}\n"
+                f"  after_handles={after_handles}\n"
+                f"  new_handle={new_handle}\n\n"
+            )
+
+
+    def _looks_like_logged_out(self) -> bool:
+        """
+        네이버 예약 관리 페이지 세션이 풀렸는지 대충 판별.
+        - 로그인 페이지로 튕김 (nid.naver.com)
+        - 예약 리스트 핵심 DOM이 안 잡힘
+        """
+        try:
+            url = (self.driver.current_url or "").lower()
+            if "nid.naver.com" in url:
+                return True
+
+            # 예약 리스트 row 클래스가 안 보이면 (로그인/권한/에러 화면일 가능성)
+            rows = self.driver.find_elements(By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
+            if rows:
+                return False
+
+            # 혹시 로딩/다른 화면이면 짧게라도 기다려보고 재확인
+            try:
+                WebDriverWait(self.driver, 2).until(
+                    EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+                )
+                return False
+            except Exception:
+                return True
+
+        except Exception:
+            return True
+
+    def reopen_reservation_tab(self, url: str, close_old: bool = False, as_window: bool = True):
+        """
+        세션 만료/로그아웃 등으로 예약 페이지가 깨졌을 때 새 탭/새 창으로 다시 연다.
+        - as_window=True면 새 '창'으로 열어서 눈으로 확인 가능 (추천)
+        - close_old=True면 기존 탭 닫아서 더 확실히 확인 가능
+        """
+        driver = self.driver
+
+        old_handle = driver.current_window_handle
+        old_handles = list(driver.window_handles)
+        print(f"   🔎 before reopen: handles={len(old_handles)} current={old_handle}")
+
+        # ✅ 새 창/탭 열기
+        if as_window:
+            driver.switch_to.new_window("window")   # 👈 새 창 (눈에 확 띔)
+        else:
+            driver.switch_to.new_window("tab")      # 👈 새 탭
+
+        new_handle = driver.current_window_handle
+        new_handles = list(driver.window_handles)
+        print(f"   🔎 after new_window: handles={len(new_handles)} new={new_handle}")
+
+        self._log_session_recover(old_handles, new_handles, new_handle)
+
+        # ✅ 새 창(또는 탭)에서 URL 오픈
+        driver.get(url)
+
+        # (선택) 창 크기 키워서 눈으로 보기 쉽게
+        try:
+            driver.maximize_window()
+        except Exception:
+            pass
+
+        print(f"   ✅ reopened url={driver.current_url}")
+
+        # ✅ 기존 탭 닫고 싶으면 (테스트 때는 True 추천)
+        if close_old:
+            try:
+                driver.switch_to.window(old_handle)
+                driver.close()
+            finally:
+                driver.switch_to.window(new_handle)
+
+        print("🆕 세션 복구: 새 탭/창으로 예약 페이지 재오픈 완료")
+    def is_logged_out(self) -> bool:
+        """
+        네이버 로그아웃/세션만료 감지.
+        - URL에 login/nidlogin 포함
+        - 로그인 폼 요소가 보임
+        - 예약 리스트 핵심 요소가 안 보임
+        """
+        d = self.driver
+        try:
+            url = (d.current_url or "").lower()
+
+            # 1) URL 기반 빠른 판정
+            if "nidlogin" in url or "login" in url:
+                return True
+
+            # 2) 로그인 페이지에서 흔히 보이는 input들
+            #    (네이버가 DOM을 바꾸면 이 부분만 조정)
+            login_inputs = d.find_elements("css selector", "input#id, input#pw, input[name='id'], input[name='pw']")
+            if login_inputs:
+                return True
+
+            # 3) 예약 페이지 핵심 요소 존재 여부(너희 페이지에 맞게 1개만 잡아도 됨)
+            # 예: 예약 리스트가 반드시 존재하는 영역 selector
+            anchors = d.find_elements("css selector", "[data-testid='booking-list'], .booking_list, .ReservationList")
+            # 위 셀렉터는 예시라서, 네가 실제로 쓰는 예약 리스트 셀렉터 1개로 바꾸는 걸 추천
+            # anchors가 0이면 바로 로그아웃이라고 단정하면 오탐이 있을 수 있으니 URL/login_inputs로 1차 필터 후 보조로만 써.
+            return False
+
+        except WebDriverException:
+            # 드라이버 통신/창 죽음이면 '로그아웃'이 아니라 다른 복구 루트가 맞음
+            return False

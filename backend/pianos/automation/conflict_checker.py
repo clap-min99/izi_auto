@@ -22,13 +22,13 @@ from pianos.automation.utils import is_allowed_customer
 
 
 class ConflictChecker:
-    """예약 충돌 확인 및 처리"""
-    # 테스트 박수민, 하건수
-    
-    def __init__(self, dry_run=True):
+    def __init__(self, dry_run=True, scraper=None, sms_sender=None, naver_url: str = ""):
         self.dry_run = dry_run
-        self.scraper = NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
-        self.sms_sender = SMSSender(dry_run=dry_run)
+        self.naver_url = naver_url
+
+        # ✅ 주입 우선, 없으면 단독 실행용으로만 생성
+        self.scraper = scraper or NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
+        self.sms_sender = sms_sender or SMSSender(dry_run=dry_run)
     
     def check_and_handle_conflicts(self, new_booking):
         """

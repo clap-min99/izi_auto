@@ -45,18 +45,33 @@ class ReservationMonitor:
         """
         self.naver_url = naver_url
         self.dry_run = dry_run
-        
-        # 컴포넌트 초기화
         self.scraper = NaverPlaceScraper(use_existing_chrome=True, dry_run=dry_run)
-        self.conflict_checker = ConflictChecker(dry_run=dry_run)
         self.sms_sender = SMSSender(dry_run=dry_run)
+        # 컴포넌트 초기화
+        self.conflict_checker = ConflictChecker(
+            dry_run=dry_run,
+            scraper=self.scraper,
+            sms_sender=self.sms_sender,
+            naver_url=self.naver_url,
+        )
+        
+        
+        # ✅ PaymentMatcher에 scraper/sms_sender 주입
+        self.payment_matcher = PaymentMatcher(
+            dry_run=dry_run,
+            scraper=self.scraper,
+            sms_sender=self.sms_sender,
+            naver_url=self.naver_url,   # 복구 때 다시 열 URL
+        )
+
         # 알림톡(1)
         # self.alimtalk_sender = AlimTalkSender()
         self.account_sync = AccountSyncManager(dry_run=dry_run)
-        self.payment_matcher = PaymentMatcher(dry_run=dry_run)
+        # self.payment_matcher = PaymentMatcher(dry_run=dry_run)
         self.coupon_manager = CouponManager(dry_run=dry_run)
 
-        
+        self._logout_alert_sent = False
+
         # 이전 예약 리스트 (변경 감지용)
         self.previous_bookings = []
         # 이전 확정대기 개수 (상단 '확정대기 N' 탭의 N 값 추적)
@@ -65,7 +80,8 @@ class ReservationMonitor:
         # 계좌 동기화 타이머
         self.last_account_sync = datetime.now()
         self.account_sync_interval = timedelta(minutes=5)
-    
+
+        print(f"🧪 MON.scraper.driver id={id(self.scraper.driver)}")
     # 알림톡(4)
     def _fmt_dt(self, r: Reservation) -> str:
         d = r.reservation_date
@@ -167,8 +183,52 @@ class ReservationMonitor:
                 if not ctrl or not ctrl.enabled:
                     time.sleep(5)
                     continue
+                if self.scraper.is_logged_out():
+                    if not self._logout_alert_sent:
+                        self._logout_alert_sent = True
+
+                        owner_phone = getattr(settings, "OWNER_PHONE", "")
+                        msg = (
+                            "네이버 로그아웃/세션만료 감지\n"
+                            "자동화가 일시 중단되었습니다.\n"
+                            "PC에서 네이버 예약관리 페이지 재로그인 후 다시 확인해주세요."
+                        )
+
+                        try:
+                            if owner_phone:
+                                self.sms_sender.send_plain_message(
+                                    to=owner_phone,
+                                    content=msg,
+                                    msg_type="네이버 로그아웃"
+                                )
+                            print("🚨 로그아웃 알림 발송 + 자동화 일시 중단")
+                        except Exception as e:
+                            print(f"🚨 로그아웃 알림 발송 실패: {e}")
+
+                    # 🔒 자동화 중단: 재로그인까지 계속 대기 (클릭/확정/취소 금지)
+                    time.sleep(10)
+                    continue
+                else:
+                    # 로그인 상태로 돌아오면 다시 알림 가능하게 리셋
+                    if self._logout_alert_sent:
+                        print("✅ 네이버 로그인 상태 복구 감지")
+                    self._logout_alert_sent = False
                 current_time = datetime.now()
                 cycle_count += 1
+                
+                # # =========================
+                # # ✅ 테스트용: 시작 60초 후 새 탭 강제 오픈 (한 번만)
+                # # =========================
+                # if not self._test_tab_opened and (time.time() - self._started_at_ts) >= 60:
+                #     print("🧪 테스트: 60초 경과 → 새 창으로 예약 페이지 재오픈 시도")
+                #     self.scraper.reopen_reservation_tab(
+                #         self.naver_url,
+                #         close_old=True,     # ✅ 눈으로 확인 확실
+                #         as_window=True      # ✅ 새 창으로 띄움
+                #     )
+                #     self._test_tab_opened = True
+                
+
                 # ✅ [여기] 30분 경과 입금대기 자동취소
                 did_actions = False
                 did_actions |= self.cancel_expired_pending_deposits()
@@ -178,9 +238,27 @@ class ReservationMonitor:
                     print(f"\n{'='*60}")
                     print(f"💳 계좌 내역 동기화 (5분 주기) - {current_time.strftime('%H:%M:%S')}")
                     print(f"{'='*60}")
-                    self.account_sync.sync_transactions()
-                    self.last_account_sync = current_time
-                
+                    ok, new_cnt = self.account_sync.sync_transactions()   # 👈 여기 바뀜
+
+                    if ok:  
+                        self.last_account_sync = current_time
+                    else:
+                        self.last_account_sync = current_time - (self.account_sync_interval - timedelta(seconds=60))
+                        print("   🔁 계좌 동기화 실패 → 60초 후 재시도")
+
+                # =========================
+                # ✅ 세션/화면 이상 감지 → 새 창으로 복구 (실전)
+                # =========================
+                if self.scraper._looks_like_logged_out():
+                    print("⚠️ 세션 만료/로그아웃/화면이상 감지 → 새 창으로 복구")
+                    self.scraper.reopen_reservation_tab(
+                        self.naver_url,
+                        close_old=True,    # 문제창 닫아버리기 (꼬임 방지)
+                        as_window=True     # 새 창으로 확실히 띄우기
+                    )
+                    continue  # ✅ 복구한 사이클은 건너뛰고 다음 사이클에서 안정적으로 진행
+
+
                 # 2. 예약 리스트 스크래핑 (기본 예약리스트 탭 기준)
                 current_bookings = self.scraper.scrape_all_bookings()
                 
@@ -274,6 +352,33 @@ class ReservationMonitor:
                 print(f"\n❌ 모니터링 오류: {e}")
                 import traceback
                 traceback.print_exc()
+
+                recovered = False
+
+                try:
+                    msg = str(e)
+                    if (
+                        ("NewConnectionError" in msg) or
+                        ("HTTPConnectionPool" in msg) or
+                        ("WinError 10061" in msg) or
+                        ("no such window" in msg) or
+                        ("web view not found" in msg)
+                    ):
+                        print("🧯 드라이버 통신 오류 감지 → 새 창 복구 시도")
+                        self.scraper.reopen_reservation_tab(
+                            self.naver_url,
+                            close_old=True,
+                            as_window=True
+                        )
+                        recovered = True
+                except Exception:
+                    pass
+
+                if recovered:
+                    print("🔄 복구 완료 → 다음 사이클에서 재개")
+                    time.sleep(2)
+                    continue   # ✅ 이게 핵심 (같은 사이클 이어가지 않음)
+
                 print("\n⏰ 10초 후 재시도...")
                 time.sleep(10)
         

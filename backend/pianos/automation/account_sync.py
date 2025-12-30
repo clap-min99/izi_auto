@@ -5,9 +5,10 @@
 """
 
 import time
+import http.client
 from dataclasses import dataclass
 from datetime import datetime, timedelta
-from typing import List, Dict, Any, Optional
+from typing import List, Dict, Any, Optional, Tuple
 
 from django.conf import settings
 from django.db import transaction as db_transaction
@@ -68,7 +69,7 @@ class AccountSyncManager:
             return ""
         return memo.split("|", 1)[0].strip()
 
-    def sync_transactions(self, lookback_days: int = 2, initial: bool = False) -> int:
+    def sync_transactions(self, lookback_days: int = 2, initial: bool = False) -> Tuple[bool, int]:
         """
         팝빌에서 거래내역을 가져와 DB 저장.
         - lookback_days: 5분 주기라도 은행 반영 지연/재수집 대비로 1~2일 겹쳐 조회 추천
@@ -78,32 +79,58 @@ class AccountSyncManager:
 
         if self.dry_run:
             print("   [DRY_RUN] 팝빌 호출/DB저장 생략")
-            return 0
+            return True, 0  # dry_run은 "성공"으로 취급
 
         try:
             items = self._fetch_from_popbill(lookback_days=lookback_days)
+            if items is None:
+                print("   ❌ 팝빌 수집 미완료/timeout → 이번 주기 실패")
+                return False, 0
+
             if not items:
                 print("   ℹ️ 새로운(또는 미저장) 거래 내역 없음")
-                return 0
+                return True, 0
 
             new_count = self._save_transactions(items, initial=initial)
             print(f"   ✅ 신규 저장: {new_count}건")
-            return new_count
+            return True, new_count
 
         except PopbillException as e:
             print(f"   ❌ 팝빌 오류 [{e.code}] {e.message}")
-            return 0
+            return False, 0
         except Exception as e:
             print(f"   ❌ 동기화 오류: {e}")
-            import traceback
-            traceback.print_exc()
-            return 0
+            import traceback; traceback.print_exc()
+
+            # ✅ 네트워크 끊김/연결 꼬임 이후 http.client 상태가 깨진 케이스
+            if isinstance(e, http.client.CannotSendRequest) or "Request-sent" in str(e):
+                try:
+                    print("   🧯 Popbill HTTP 상태 꼬임 감지 → 서비스 재생성 후 1회 재시도")
+                    self.svc = self._build_service(self.cfg)  # ✅ svc 리셋
+                    items = self._fetch_from_popbill(lookback_days=lookback_days)
+                    if items is None:
+                        print("   ❌ 재시도도 실패/timeout")
+                        return False, 0
+
+                    if not items:
+                        print("   ℹ️ 재시도 결과: 새로운 거래 없음")
+                        return True, 0
+
+                    new_count = self._save_transactions(items, initial=initial)
+                    print(f"   ✅ (재시도) 신규 저장: {new_count}건")
+                    return True, new_count
+                except Exception as e2:
+                    print(f"   ❌ svc 재생성 재시도도 실패: {e2}")
+                    import traceback; traceback.print_exc()
+                    return False, 0
+
+            return False, 0
 
     # -----------------------
     # Popbill fetch pipeline
     # -----------------------
 
-    def _fetch_from_popbill(self, lookback_days: int) -> List[Dict[str, Any]]:
+    def _fetch_from_popbill(self, lookback_days: int) -> Optional[List[Dict[str, Any]]]:
         """
         requestJob -> getJobState(완료/성공) -> search
         반환은 AccountTransaction 저장에 필요한 dict list로 변환해서 반환.
@@ -125,9 +152,9 @@ class AccountSyncManager:
         )
 
         # 2) 수집 상태 확인
-        state = self._wait_job_done(job_id, timeout_sec=25, interval_sec=2)
+        state = self._wait_job_done(job_id, timeout_sec=90, interval_sec=2)
         if not state:
-            return []
+            return None
 
         if str(getattr(state, "jobState", "")) != "3" or int(getattr(state, "errorCode", 0)) != 1:
             print(
@@ -135,7 +162,7 @@ class AccountSyncManager:
                 f"errorCode={getattr(state,'errorCode',None)}"
             )
             print(f"      reason={getattr(state,'errorReason','')}")
-            return []
+            return None
 
         # 3) 거래내역 조회(Search) - 입금만
         result = self.svc.search(
