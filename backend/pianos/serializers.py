@@ -1,5 +1,6 @@
 from rest_framework import serializers
 from .models import Reservation, CouponCustomer, CouponHistory, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl
+from django.utils import timezone
 
 
 class ReservationSerializer(serializers.ModelSerializer):
@@ -53,18 +54,27 @@ class CouponHistorySerializer(serializers.ModelSerializer):
     booking_number = serializers.SerializerMethodField()
     usage_datetime = serializers.SerializerMethodField()
     charged_or_used_time = serializers.IntegerField(source='used_or_charged_time')
-    
+    occurred_at = serializers.SerializerMethodField()
+
     class Meta:
         model = CouponHistory
         fields = [
             'id',
             'transaction_type',
             'booking_number',
+            'occurred_at',     
             'usage_datetime',
             'remaining_time',  # 분 단위
             'charged_or_used_time',  # 분 단위
         ]
     
+    def get_occurred_at(self, obj):
+        if not obj.created_at:
+            return "-"
+        # ✅ UTC → KST 자동 변환
+        local_dt = timezone.localtime(obj.created_at)
+        return local_dt.strftime("%Y-%m-%d %H:%M:%S")
+
     def get_booking_number(self, obj):
         """예약방번호 (room_name)"""
         return obj.room_name if obj.room_name else '-'

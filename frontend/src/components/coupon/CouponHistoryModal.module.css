@@ -11,9 +11,9 @@
 .modal {
   position: relative;
   max-height: 80vh;
-   display: flex;
+  display: flex;
   flex-direction: column; 
-  width: 600px;
+  width: 800px;
   background: #d7e2d6;
   border-radius: 10px;
   padding: 32px 40px 28px;

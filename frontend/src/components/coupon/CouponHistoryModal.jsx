@@ -8,7 +8,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
   const [histories, setHistories] = useState([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
-
+  
   useEffect(() => {
     if (!open || !customerId) return;
 
@@ -65,6 +65,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                     <th>No.</th>
                     <th>쿠폰</th>
                     <th>예약방번호</th>
+                    <th>(예약, 충전, 환불)일시</th>
                     <th>이용일시</th>
                     <th>잔여시간</th>
                     <th>충전/차감 시간</th>
@@ -73,7 +74,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                 <tbody>
                   {histories.length === 0 ? (
                     <tr>
-                      <td colSpan={6}>사용 이력이 없습니다.</td>
+                      <td colSpan={7}>사용 이력이 없습니다.</td>
                     </tr>
                   ) : (
                     histories.map((h, idx) => (
@@ -81,6 +82,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                         <td>{histories.length - idx}</td>
                         <td>{h.transaction_type}</td>
                         <td>{h.booking_number}</td>
+                        <td>{h.occurred_at}</td>
                         <td>{h.usage_datetime}</td>
                         <td>{(h.remaining_time)/60}</td>
                         <td>{(h.charged_or_used_time)/60}</td>
