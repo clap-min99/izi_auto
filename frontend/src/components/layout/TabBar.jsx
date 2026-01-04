@@ -8,6 +8,7 @@ function TabBar({ activeTab, onChange, rightContent }) {
     { id: 'prepaid', label: '쿠폰 고객' },
     { id: 'deposit', label: '계좌 확인' },
     { id: 'message', label: '문자 관리' },
+    { id: 'send_sms', label: '쿠폰 문자' },
   ];
 
   return (

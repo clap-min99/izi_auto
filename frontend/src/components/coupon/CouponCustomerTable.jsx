@@ -174,7 +174,7 @@ function CouponCustomerTable({
                       {isEditing ? (
                         <>
                            <input
-                            className={styles.editInput}
+                            className={styles.reasonInput}
                             placeholder="수정 사유 (선택)"
                             value={editForm.reason || ''}
                             onChange={(e) => onChangeEdit?.('reason', e.target.value)}
