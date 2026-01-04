@@ -167,26 +167,29 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         
         # 수정 가능한 필드만 추출
-        allowed_fields = ['customer_name', 'phone_number', 'coupon_expires_at', 'remaining_time']
+        allowed_fields = ['customer_name', 'phone_number', 'coupon_expires_at', 'remaining_time', 'reason']
         filtered_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        reason = (filtered_data.pop('reason', '') or '').strip() 
 
         before_remaining = instance.remaining_time
-
+        before_name = instance.customer_name
+        before_phone = instance.phone_number
+        before_expires = instance.coupon_expires_at
         serializer = CouponCustomerListSerializer(
             instance, 
             data=filtered_data, 
             partial=partial
         )
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(raise_exception=True)            
         self.perform_update(serializer)
 
         # ✅ remaining_time 변경이면 '수동' 이력 남기기
-        instance.refresh_from_db(fields=['remaining_time', 'customer_name'])
+        instance.refresh_from_db(fields=['remaining_time', 'customer_name', 'phone_number', 'coupon_expires_at'])
         after_remaining = instance.remaining_time
 
         if 'remaining_time' in filtered_data and after_remaining != before_remaining:
             delta = after_remaining - before_remaining  # +면 충전, -면 차감
-
+            
             CouponHistory.objects.create(
                 customer=instance,
                 reservation=None,
@@ -198,8 +201,27 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 remaining_time=after_remaining,
                 used_or_charged_time=delta,
                 transaction_type='수동',
+                reason=reason or None,   
             )
-        
+        other_changed = (
+            ('customer_name' in filtered_data and instance.customer_name != before_name) or
+            ('phone_number' in filtered_data and instance.phone_number != before_phone) or
+            ('coupon_expires_at' in filtered_data and instance.coupon_expires_at != before_expires)
+        )
+        if other_changed and not ('remaining_time' in filtered_data and after_remaining != before_remaining):
+            CouponHistory.objects.create(
+                customer=instance,
+                reservation=None,
+                customer_name=instance.customer_name,
+                room_name=None,
+                transaction_date=timezone.localdate(),
+                start_time=None,
+                end_time=None,
+                remaining_time=instance.remaining_time,
+                used_or_charged_time=0,
+                transaction_type='수정',
+                reason=reason or None,
+            )
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'], url_path='history')

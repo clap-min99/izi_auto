@@ -279,6 +279,7 @@ class CouponHistory(models.Model):
     )
     
     created_at = models.DateTimeField(auto_now_add=True, verbose_name="생성일시")
+    reason = models.CharField(max_length=255, null=True, blank=True, verbose_name="수정 사유")
 
     class Meta:
         db_table = 'coupon_history'
