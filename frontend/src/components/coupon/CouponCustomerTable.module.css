@@ -80,3 +80,12 @@
   background: rgba(0, 0, 0, 0.04);
   cursor: not-allowed;
 }
+
+.reasonInput {
+  width: 50%;
+  border: 1px solid rgba(0, 0, 0, 0.18);
+  padding: 8px 10px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 12px;
+}

@@ -322,12 +322,12 @@ class ReservationMonitor:
                     fresh_bookings = self.scraper.scrape_all_bookings()
 
                     # ✅ (핵심) 화면 조작 중간에 들어온 예약이 있으면 여기서 추가 처리
-                    missed_new = self.find_new_bookings(fresh_bookings)
-                    if missed_new:
+                    while True:
+                        missed_new = self.find_new_bookings(fresh_bookings)
+                        if not missed_new:    # 더 이상 신규 예약이 없으면 루프 종료
+                            break
                         print(f"🧷 조작 중 유입된 새 예약 {len(missed_new)}건 추가 처리")
                         did_actions |= self.handle_new_bookings(missed_new)
-
-                        # 처리 과정에서 또 화면이 바뀌었을 수 있으니 한 번 더 최신화(선택이지만 권장)
                         self.scraper.refresh_page()
                         time.sleep(2)
                         fresh_bookings = self.scraper.scrape_all_bookings()

@@ -69,6 +69,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                     <th>이용일시</th>
                     <th>잔여시간</th>
                     <th>충전/차감 시간</th>
+                    <th>비고</th>
                   </tr>
                 </thead>
                 <tbody>
@@ -86,6 +87,7 @@ function CouponHistoryModal({ open, customerId, onClose }) {
                         <td>{h.usage_datetime}</td>
                         <td>{(h.remaining_time)/60}</td>
                         <td>{(h.charged_or_used_time)/60}</td>
+                        <td>{h.reason || '-'}</td>
                       </tr>
                     ))
                   )}

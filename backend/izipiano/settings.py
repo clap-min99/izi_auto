@@ -167,7 +167,7 @@ OWNER_PHONE = "01029912508"  # 사장님 번호로 바꿔야함
 
 
 # True면 ALLOWED_CUSTOMER_NAMES만 자동 처리, False면 전체 자동 처리
-AUTOMATION_SAFE_MODE = False
+AUTOMATION_SAFE_MODE = True
 
 #True일 때만 적용되는 허용 고객명 목록
 AUTOMATION_ALLOWED_CUSTOMER_NAMES = ["박수민", "하건수", "박성원"]

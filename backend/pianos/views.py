@@ -11,6 +11,7 @@ from django.utils import timezone
 from django.db import transaction
 from datetime import datetime
 from .automation.coupon_manager import get_room_category
+from .automation.sms_sender import SMSSender
 
 
 from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl
@@ -167,26 +168,29 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
         instance = self.get_object()
         
         # 수정 가능한 필드만 추출
-        allowed_fields = ['customer_name', 'phone_number', 'coupon_expires_at', 'remaining_time']
+        allowed_fields = ['customer_name', 'phone_number', 'coupon_expires_at', 'remaining_time', 'reason']
         filtered_data = {k: v for k, v in request.data.items() if k in allowed_fields}
+        reason = (filtered_data.pop('reason', '') or '').strip() 
 
         before_remaining = instance.remaining_time
-
+        before_name = instance.customer_name
+        before_phone = instance.phone_number
+        before_expires = instance.coupon_expires_at
         serializer = CouponCustomerListSerializer(
             instance, 
             data=filtered_data, 
             partial=partial
         )
-        serializer.is_valid(raise_exception=True)
+        serializer.is_valid(raise_exception=True)            
         self.perform_update(serializer)
 
         # ✅ remaining_time 변경이면 '수동' 이력 남기기
-        instance.refresh_from_db(fields=['remaining_time', 'customer_name'])
+        instance.refresh_from_db(fields=['remaining_time', 'customer_name', 'phone_number', 'coupon_expires_at'])
         after_remaining = instance.remaining_time
 
         if 'remaining_time' in filtered_data and after_remaining != before_remaining:
             delta = after_remaining - before_remaining  # +면 충전, -면 차감
-
+            
             CouponHistory.objects.create(
                 customer=instance,
                 reservation=None,
@@ -198,8 +202,27 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 remaining_time=after_remaining,
                 used_or_charged_time=delta,
                 transaction_type='수동',
+                reason=reason or None,   
             )
-        
+        other_changed = (
+            ('customer_name' in filtered_data and instance.customer_name != before_name) or
+            ('phone_number' in filtered_data and instance.phone_number != before_phone) or
+            ('coupon_expires_at' in filtered_data and instance.coupon_expires_at != before_expires)
+        )
+        if other_changed and not ('remaining_time' in filtered_data and after_remaining != before_remaining):
+            CouponHistory.objects.create(
+                customer=instance,
+                reservation=None,
+                customer_name=instance.customer_name,
+                room_name=None,
+                transaction_date=timezone.localdate(),
+                start_time=None,
+                end_time=None,
+                remaining_time=instance.remaining_time,
+                used_or_charged_time=0,
+                transaction_type='수정',
+                reason=reason or None,
+            )
         return Response(serializer.data)
     
     @action(detail=True, methods=['get'], url_path='history')
@@ -222,7 +245,38 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
                 many=True
             ).data
         })
-
+    
+    @action(detail=False, methods=['post'], url_path='send_sms')
+    def send_sms(self, request):
+        """쿠폰 고객 대상 SMS 일괄 발송 액션"""
+        category = request.data.get('category')
+        message = request.data.get('message', '')
+        # 입력값 검증
+        if category not in ('국산', '수입'):
+            return Response({'detail': '유효한 피아노 구분을 지정하세요 (국산/수입).'}, status=400)
+        if not message:
+            return Response({'detail': '발송할 메시지 내용을 입력하세요.'}, status=400)
+        # 해당 카테고리의 쿠폰 고객 조회
+        customers = CouponCustomer.objects.filter(piano_category=category)
+        if not customers:
+            return Response({'detail': f"'{category}' 쿠폰 사용자가 없습니다."}, status=404)
+        # SMS 발송 처리
+        sender = SMSSender(dry_run=False)  # 실제 발송 모드 (테스트시 True로 두면 콘솔에만 출력)
+        success_count = 0
+        for customer in customers:
+            ok = sender.send_plain_message(
+                to=customer.phone_number,
+                content=message,
+                msg_type=f"쿠폰 {category} 문자"
+            )
+            if ok:
+                success_count += 1
+        # 결과 응답 (성공 건수 및 대상 그룹)
+        return Response({
+            'category': category,
+            'total_recipients': customers.count(),
+            'sent_success': success_count
+        }, status=200)
 
 # ============================================================
 # ★ 테스트용 API (DRY_RUN 환경에서만 사용)

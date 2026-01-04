@@ -58,11 +58,12 @@ function CouponCustomerPage({ search, refreshKey }) {
       phone_number: customer.phone_number ?? '',
       coupon_expires_at: customer.coupon_expires_at ?? '', // ✅ 추가
       remaining_time: String(customer.remaining_time ?? 0),         // ✅ 추가 (분)
+      reason: '',
     });
   };
   const handleCancelEdit = () => {
     setEditingId(null);
-    setEditForm({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: '0', });
+    setEditForm({ customer_name: '', phone_number: '', coupon_expires_at: '', remaining_time: '0',  reason: '',});
   };
 
   const handleChangeEdit = (field, value) => {
@@ -89,6 +90,7 @@ function CouponCustomerPage({ search, refreshKey }) {
         phone_number: phone,
         coupon_expires_at,
         remaining_time,
+        reason: (editForm.reason || '').trim(),
       });
 
       // ✅ 리스트 즉시 반영

@@ -173,6 +173,14 @@ function CouponCustomerTable({
                     <div className={styles.actionButtons}>
                       {isEditing ? (
                         <>
+                           <input
+                            className={styles.reasonInput}
+                            placeholder="수정 사유 (선택)"
+                            value={editForm.reason || ''}
+                            onChange={(e) => onChangeEdit?.('reason', e.target.value)}
+                            onKeyDown={(e) => handleEditKeyDown(e, c)}
+                            disabled={isSaving}
+                          />
                           <button
                             type="button"
                             className={styles.editButton}

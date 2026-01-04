@@ -30,6 +30,7 @@ class ReservationSerializer(serializers.ModelSerializer):
 
 class CouponCustomerListSerializer(serializers.ModelSerializer):
     """쿠폰 고객 목록 Serializer (선불 고객 탭)"""
+    reason = serializers.CharField(required=False, allow_blank=True, write_only=True)
     
     class Meta:
         model = CouponCustomer
@@ -44,6 +45,7 @@ class CouponCustomerListSerializer(serializers.ModelSerializer):
             'coupon_status',
             'coupon_registered_at',
             'coupon_expires_at',
+            'reason',
         ]
         read_only_fields = ['id']
 
@@ -66,6 +68,7 @@ class CouponHistorySerializer(serializers.ModelSerializer):
             'usage_datetime',
             'remaining_time',  # 분 단위
             'charged_or_used_time',  # 분 단위
+            'reason',
         ]
     
     def get_occurred_at(self, obj):
