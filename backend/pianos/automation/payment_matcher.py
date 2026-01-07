@@ -16,7 +16,7 @@ django.setup()
 from django.db import transaction
 from django.conf import settings
 from selenium.common.exceptions import NoSuchWindowException, WebDriverException
-from pianos.models import Reservation, AccountTransaction
+from pianos.models import Reservation, AccountTransaction, normalize_name
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
 from pianos.automation.utils import is_allowed_customer
@@ -188,10 +188,11 @@ class PaymentMatcher:
         Returns:
             QuerySet: 매칭된 거래 내역들
         """
+        target = normalize_name(name)
         return AccountTransaction.objects.filter(
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
-            depositor_name__icontains=name,
+            normalized_depositor_name__iexact=target,
             amount=amount,
             transaction_date__gte=from_date
         ).order_by('transaction_date', 'transaction_time')[:1]
@@ -204,10 +205,11 @@ class PaymentMatcher:
             list: 매칭된 거래 내역 리스트
         """
         # 해당 고객의 확정전 입금 내역 조회
+        target = normalize_name(name)
         candidate_transactions = AccountTransaction.objects.filter(
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
-            depositor_name__icontains=name,
+            normalized_depositor_name__iexact=target,
             transaction_date__gte=from_date
         ).order_by('transaction_date', 'transaction_time')
         
@@ -469,9 +471,10 @@ class PaymentMatcher:
     
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
+        target = reservation.normalized_customer_name or normalize_name(reservation.customer_name)
         return AccountTransaction.objects.filter(
             transaction_type='입금',
-            depositor_name__icontains=reservation.customer_name,
+            normalized_depositor_name__iexact=target,
             amount=reservation.price,
             transaction_date__gte=reservation.created_at.date(),
             match_status='확정전'

@@ -249,13 +249,19 @@ class NaverPlaceScraper:
             phone_number = phone_el.text.strip()
 
             # 4) 네이버 예약번호
-            raw_booking_id = row.find_element(
+            book_id_el = row.find_element(
                 By.CLASS_NAME,
                 "BookingListView__book-number__33dBa"
-            ).text.strip()
+            )
+            raw_booking_id = (book_id_el.text or "").strip()
+            is_change_badge = ("변경" in raw_booking_id)
 
             m = re.search(r"\d+", raw_booking_id)
-            naver_booking_id = m.group(0) if m else raw_booking_id  # fallback
+            # naver_booking_id = m.group(0) if m else raw_booking_id  # fallback
+            if not m:
+                print(f"   ⚠️ 예약번호 파싱 실패(스킵): raw={raw_booking_id!r}")
+                return None
+            naver_booking_id = m.group(0)
 
             # 5) 예약일시 "25. 12. 10.(수) 오전 11:00~12:00"
             datetime_str = row.find_element(
@@ -396,6 +402,7 @@ class NaverPlaceScraper:
                 "extra_people_qty": extra_qty,
                 "is_proxy": is_proxy,
                 "request_comment": request_comment,
+                "is_change_badge": is_change_badge,
             }
 
             # print(f"✅ 파싱 완료: {customer_name} ({naver_booking_id}) {status} {price:,}원")
