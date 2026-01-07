@@ -59,6 +59,7 @@ function ReservationPage({ search }) {
         currentPage={page}
         totalPages={totalPages}
         onChange={setPage}
+        windowSize={5} 
       />
     </>
   );

@@ -1,9 +1,10 @@
 .pagination {
-  margin-top: 8px;
-  text-align: center;
-  gap: 8px;
   display: flex;
   justify-content: center;
+  align-items: center;
+  gap: 8px;
+  padding: 12px 0;
+  user-select: none;
 }
 
 .pageBtn {
@@ -11,6 +12,10 @@
   background: transparent;
   padding: 2px 6px;
   cursor: pointer;
+}
+
+.navBtn {
+  border: none;
 }
 
 .active {

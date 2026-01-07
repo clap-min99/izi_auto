@@ -257,8 +257,12 @@ class CouponCustomerViewSet(viewsets.ModelViewSet):
         if not message:
             return Response({'detail': '발송할 메시지 내용을 입력하세요.'}, status=400)
         # 해당 카테고리의 쿠폰 고객 조회
-        customers = CouponCustomer.objects.filter(piano_category=category)
-        if not customers:
+        customers = CouponCustomer.objects.filter(
+            piano_category=category,
+            remaining_time__gt=0,   # ⭐ 핵심
+            coupon_expires_at__gt=timezone.localdate(),
+        )
+        if not customers.exists():
             return Response({'detail': f"'{category}' 쿠폰 사용자가 없습니다."}, status=404)
         # SMS 발송 처리
         sender = SMSSender(dry_run=False)  # 실제 발송 모드 (테스트시 True로 두면 콘솔에만 출력)
