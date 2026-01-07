@@ -1,6 +1,15 @@
+import unicodedata
+import re
 from django.db import models
 from django.utils import timezone
 from datetime import datetime
+
+def normalize_name(name: str) -> str:
+    if not name:
+        return ""
+    name = unicodedata.normalize("NFKC", name)  # 전각→반각 등 정규화
+    name = re.sub(r"\s+", "", name)             # 공백 제거
+    return name.upper()
 
 
 class CouponCustomer(models.Model):
@@ -100,7 +109,8 @@ class AccountTransaction(models.Model):
         blank=True,
         verbose_name="입금자명"
     )
-    
+    normalized_depositor_name = models.CharField(max_length=120, blank=True, db_index=True, verbose_name="입금자명(정규화)")
+
     # 메모
     memo = models.TextField(blank=True, verbose_name="거래메모")
     
@@ -139,6 +149,11 @@ class AccountTransaction(models.Model):
             models.Index(fields=['match_status']),
             models.Index(fields=['depositor_name']),
         ]
+    
+    def save(self, *args, **kwargs):
+        self.normalized_depositor_name = normalize_name(self.depositor_name)
+        super().save(*args, **kwargs)
+
 
 class Reservation(models.Model):
     """예약 테이블"""
@@ -148,6 +163,7 @@ class Reservation(models.Model):
         ('신청', '신청'),
         ('확정', '확정'),
         ('취소', '취소'),
+        ('변경', '변경'),
     ]
     
     # SMS 전송 상태 선택지
@@ -177,6 +193,8 @@ class Reservation(models.Model):
     request_comment = models.TextField(blank=True, default="", verbose_name="요청사항")
     extra_people_qty = models.PositiveIntegerField(default=0, verbose_name="인원추가수량")
     is_proxy = models.BooleanField(default=False, verbose_name="대리예약여부")
+    normalized_customer_name = models.CharField(max_length=120, blank=True, db_index=True)
+
 
     # 문자 발송 상태
     account_sms_status = models.CharField(
@@ -198,6 +216,17 @@ class Reservation(models.Model):
         choices=STATUS_CHOICES, 
         default='신청',
         verbose_name="예약상태"
+    )
+
+    # 🔹 변경 배지가 붙은 예약(B)에 대해
+    is_change_badge = models.BooleanField(
+        default=False,
+        verbose_name="변경 배지 예약 여부"
+    )
+
+    is_change_event_handled = models.BooleanField(
+        default=False,
+        verbose_name="변경 이벤트 처리 완료 여부"
     )
 
     # 사장님 알림톡 상태
@@ -238,6 +267,10 @@ class Reservation(models.Model):
             return base + (base * extra // 2)  # 반올림 고려 X (요청대로)
 
         return base
+
+    def save(self, *args, **kwargs):
+        self.normalized_customer_name = normalize_name(self.customer_name)
+        super().save(*args, **kwargs)
 
 
 class CouponHistory(models.Model):

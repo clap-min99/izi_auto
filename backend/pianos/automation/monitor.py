@@ -11,7 +11,7 @@ import os
 import sys
 import django
 import time
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date
 
 # Django 설정
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -82,6 +82,50 @@ class ReservationMonitor:
         self.account_sync_interval = timedelta(minutes=5)
 
         print(f"🧪 MON.scraper.driver id={id(self.scraper.driver)}")
+    
+    def handle_change_event_if_needed(self, current_bookings):
+        """
+        ✅ '변경' 배지 예약(B)이 화면에 있고,
+        ✅ 그 B가 아직 change_event 처리되지 않은 경우에만,
+        -> DB에는 있으나 네이버 리스트에는 없는 (오늘~30일) 예약(A)을 '변경' 처리한다.
+        """
+        today = timezone.localdate()
+        end_date = today + timedelta(days=30)  # 네이버 기본 노출 범위와 동일
+
+        # 이번 사이클 화면에 있는 예약번호 집합
+        screen_ids = {
+            b.get("naver_booking_id")
+            for b in current_bookings
+            if b.get("naver_booking_id")
+        }
+        if not screen_ids:
+            return 0
+
+        # 1) 트리거: 화면에 있는 예약 중 '변경 배지' + 아직 처리 안 된 B 존재?
+        trigger_qs = Reservation.objects.filter(
+            naver_booking_id__in=screen_ids,
+            is_change_badge=True,
+            is_change_event_handled=False,
+        )
+        if not trigger_qs.exists():
+            return 0
+
+        # 2) 타겟: DB에는 있는데 화면에는 없는 예약(A) (오늘~30일 범위)
+        target_qs = (
+            Reservation.objects
+            .filter(reservation_date__gte=today, reservation_date__lte=end_date)
+            .exclude(naver_booking_id__in=screen_ids)
+        )
+        # (선택) 이미 취소/변경은 건드릴 필요 없으면 제외
+        target_qs = target_qs.exclude(reservation_status__in=["취소", "변경"])
+
+        updated = target_qs.update(reservation_status="변경")
+
+        # 3) 트리거였던 B들 처리완료 표시(재실행 방지)
+        trigger_qs.update(is_change_event_handled=True)
+
+        print(f"🔁 예약변경 이벤트 처리: A(누락) {updated}건 → status='변경', B(배지) {trigger_qs.count()}건 handled=True")
+        return updated
     # 알림톡(4)
     def _fmt_dt(self, r: Reservation) -> str:
         d = r.reservation_date
@@ -334,12 +378,14 @@ class ReservationMonitor:
 
                     # ✅ 최신 스냅샷으로 DB 상태 동기화
                     self.update_existing_bookings(fresh_bookings)
+                    self.handle_change_event_if_needed(fresh_bookings)
 
                     # ✅ previous도 최신 스냅샷으로 저장 (중요)
                     self.previous_bookings = fresh_bookings
                 else:
                     # ✅ 이건 “상태동기화는 매 사이클”로 바꾸는 걸 추천
                     self.update_existing_bookings(current_bookings)
+                    self.handle_change_event_if_needed(current_bookings)
                     self.previous_bookings = current_bookings
                     self.scraper.refresh_page()
 
@@ -721,6 +767,7 @@ class ReservationMonitor:
                 "request_comment": booking.get("request_comment", ""),
                 # 이미 저장된 데이터라면 문자상태 덮어쓰지 않게 주의!
                 # 처음 생성일 때만 기본값 넣고 싶으면 아래처럼 분기 권장
+                "is_change_badge": booking.get("is_change_badge", False),
             }
         )
 
