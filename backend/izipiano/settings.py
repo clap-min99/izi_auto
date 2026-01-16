@@ -157,7 +157,7 @@ POPBILL_USER_ID = os.getenv("POPBILL_USER_ID")
 POPBILL_BANK_CODE = os.getenv("POPBILL_BANK_CODE")
 POPBILL_ACCOUNT_NUMBER = os.getenv("POPBILL_ACCOUNT_NUMBER")
 
-POPBILL_IS_TEST = True # 운영전환시 False로 전환해야함
+POPBILL_IS_TEST = False # 운영전환시 False로 전환해야함
 POPBILL_IP_RESTRICT = False
 POPBILL_USE_STATIC_IP = False
 POPBILL_USE_LOCAL_TIME = True
@@ -167,7 +167,7 @@ OWNER_PHONE = "01029912508"  # 사장님 번호로 바꿔야함
 
 
 # True면 ALLOWED_CUSTOMER_NAMES만 자동 처리, False면 전체 자동 처리
-AUTOMATION_SAFE_MODE = True
+AUTOMATION_SAFE_MODE = False
 
 #True일 때만 적용되는 허용 고객명 목록
 AUTOMATION_ALLOWED_CUSTOMER_NAMES = ["박수민", "하건수", "박성원"]

@@ -121,6 +121,13 @@ class ReservationMonitor:
 
         updated = target_qs.update(reservation_status="변경")
 
+        # ✅ 추가: 쿠폰 사용 시간 환불
+        for res in target_qs:
+            if res.is_coupon:
+                refunded = self.coupon_manager.refund_if_confirmed_coupon_canceled(res)
+                if refunded:
+                    print(f"      ♻️ 쿠폰 환불 완료 (+{res.get_duration_minutes()}분)")
+
         # 3) 트리거였던 B들 처리완료 표시(재실행 방지)
         trigger_qs.update(is_change_event_handled=True)
 
@@ -688,7 +695,21 @@ class ReservationMonitor:
             print(f"      🛡️ 안전모드: '{reservation.customer_name}' 쿠폰 확정/취소/문자 스킵 (DB 기록만)")
             return False
         print(f"      🎫 쿠폰 예약 처리 시작")
+        if reservation.is_change_badge:
+            original_res = Reservation.objects.filter(
+                phone_number=reservation.phone_number,
+                reservation_status='확정',
+                is_coupon=True,
+                is_change_badge=False
+            ).exclude(naver_booking_id=reservation.naver_booking_id).first()
 
+            if original_res:
+                self.coupon_manager.refund_if_confirmed_coupon_canceled(original_res)
+                original_res.reservation_status = '변경'
+                original_res.save(update_fields=['reservation_status', 'updated_at'])
+                print(f"   🔄 기존 예약 쿠폰 환불 처리: {original_res.naver_booking_id}")
+
+        # ✅ 잔여 시간 확인 후 충분하면 차감, 부족하면 자동 취소
         ok, customer, reason = self.coupon_manager.check_balance(reservation)
 
         if not ok:
