@@ -14,6 +14,7 @@ os.environ.setdefault('DJANGO_SETTINGS_MODULE', 'izipiano.settings')
 django.setup()
 
 from django.db import transaction
+from django.db.models import Q
 from django.conf import settings
 from selenium.common.exceptions import NoSuchWindowException, WebDriverException
 from pianos.models import Reservation, AccountTransaction, normalize_name
@@ -42,6 +43,18 @@ class PaymentMatcher:
             or "target window already closed" in msg.lower()
             or "web view not found" in msg.lower()
         )
+    def _depositor_match_q(self, customer_name: str) -> Q:
+        """
+        입금자명 매칭 조건:
+        - 기본: 완전일치
+        - 보강: 이름이 포함된 경우도 허용 (예: '신한홍길동'에 '홍길동' 포함)
+        - 단, 이름이 너무 짧으면(1글자) 오탐 위험이 커서 포함 매칭 제외
+        """
+        target = normalize_name(customer_name)
+        if len(target) < 2:
+            return Q(normalized_depositor_name__iexact=target)
+        return Q(normalized_depositor_name__iexact=target) | Q(normalized_depositor_name__icontains=target)
+
 
     
     def check_pending_payments(self):
@@ -188,11 +201,11 @@ class PaymentMatcher:
         Returns:
             QuerySet: 매칭된 거래 내역들
         """
-        target = normalize_name(name)
+        q = self._depositor_match_q(name)
         return AccountTransaction.objects.filter(
+            q,
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
-            normalized_depositor_name__iexact=target,
             amount=amount,
             transaction_date__gte=from_date
         ).order_by('transaction_date', 'transaction_time')[:1]
@@ -205,11 +218,11 @@ class PaymentMatcher:
             list: 매칭된 거래 내역 리스트
         """
         # 해당 고객의 확정전 입금 내역 조회
-        target = normalize_name(name)
+        q = self._depositor_match_q(name)
         candidate_transactions = AccountTransaction.objects.filter(
+            q,
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
-            normalized_depositor_name__iexact=target,
             transaction_date__gte=from_date
         ).order_by('transaction_date', 'transaction_time')
         
@@ -471,10 +484,12 @@ class PaymentMatcher:
     
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
-        target = reservation.normalized_customer_name or normalize_name(reservation.customer_name)
+        name = reservation.normalized_customer_name or reservation.customer_name
+        q = self._depositor_match_q(name)
+
         return AccountTransaction.objects.filter(
+            q,
             transaction_type='입금',
-            normalized_depositor_name__iexact=target,
             amount=reservation.price,
             transaction_date__gte=reservation.created_at.date(),
             match_status='확정전'
