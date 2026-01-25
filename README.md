@@ -1,213 +1,180 @@
 # 네이버 스마트 플레이스 자동화 구축 프로젝트
 
-### 프로젝트 시작하기
+## 피아노 스튜디오 예약·입금·문자 발송 자동화 시스템
 
-- 가상환경 설정
-
-    1. venv 만들기
-        
-        `python -m venv venv`
-
-    2. 가상 환경 on
-
-        `source venv/Scripts/activate`
-    
-    3. 가상환경에 필요한 패키지 저장
-
-        `pip freeze > requirements.txt`
-    
-    4. 저장해놓은 패키지 설치(다른 사람이 설치한 패키지 받기 or 다른 환경에서 새로 시작할 때)
-
-        `pip install -r requirements.txt`
-    
-    5. 가상환경 off
-
-        `deactivate`
+    네이버 스마트플레이스 예약부터 입금 확인, 문자 발송까지
+    운영자가 직접 처리하던 반복 업무를 자동화한 내부 운영 시스템
 
 ---
 
-### 프론트엔드(react)
-    
-- 프로젝트 생성(25/12/07) 
+### 🔍 프로젝트 배경
 
-    1. 프론트엔드 폴더 생성
+    피아노 스튜디오에서는 네이버 스마트플레이스를 통해 연습실 예약을 받고 있었고,
+    예약이 들어올 때마다 아래 과정을 모두 수동으로 처리하고 있었습니다.
 
-        `npm create vite@latest frontend -- --template react`
+    1. 예약 확인
 
-    2. 프론트엔드 폴더 이동 후 실행
+    2. 입금 계좌 안내 문자 발송
 
-        ```
-        cd frontend
-        npm install 
-        npm run dev
-        ```
+    3. 계좌 입금 내역 확인
 
----
+    4. 예약 확정 처리
 
-### 백엔드(django)
+    5. 확정 안내 문자 발송
 
-- 프로젝트 생성(25/12/07)
+    특히 새벽 시간에도 예약이 실시간으로 들어와
+    운영자가 상시 대응해야 했고,
+    업무 누락이나 실수가 발생할 가능성도 높았습니다.
 
-    1. 백엔드 폴더 생성
-
-        루트 폴더에 백엔드 폴더 생성하기
-
-        `mkdir backend`
-
-    2. 백엔드 프로젝트 생성 
-
-        `django-admin startproject projectname .`
-    
-    3. 백엔드 앱 생성
-
-        `python manage.py startapp apps(앱이름)`
-
-    4. 앱 생성 후 settings.py에 등록
-
-        ```py
-        INSTALLED_APPS = [
-        'apps',
-        'django.contrib.admin',
-        'django.contrib.auth',
-        'django.contrib.contenttypes',
-        'django.contrib.sessions',
-        'django.contrib.messages',
-        'django.contrib.staticfiles',
-        ]
-        ```
-    
-    5. 마이그레이션 생성 & DB적용
-
-        ```
-        python manage.py makemigrations
-        python manage.py migrate
-        ```
-        SQLite DB(db.sqlite3)가 만들어짐
-
-    6. django 서버 켜기
-
-        `python manage.py runserver`
-
+    이 과정이 일정한 패턴으로 반복된다는 점에서
+    코드로 충분히 해결할 수 있는 문제라고 판단해
+    해당 프로젝트를 시작하게 되었습니다.
 
 ---
 
-### electron
+### 🎯 목표
 
-- 뼈대잡기(25/12/07)
+- 반복되는 예약 관리 업무 자동화
 
-    1. 루트파일에 electron 폴더 생성
+- 운영자의 상시 개입 최소화
 
-        `mkdir electron`
+- 예약 상태에 따라 다음 작업이 자동으로 이어지는 구조 설계
 
-    2. electron 설치
-
-        ```
-        npm init -y
-        npm install electron --save-dev
-        ```
-
-    3. electron에 main.js 설정
-    
-        ```javascript
-        const { app, BrowserWindow } = require('electron');
-        const path = require('path');
-
-        function createWindow() {
-        const win = new BrowserWindow({
-            width: 1200,
-            height: 800,
-            webPreferences: {
-            // 나중에 preload, contextIsolation 설정할 예정
-            },
-        });
-
-        // 지금은 일단 React dev 서버 띄운다는 가정
-        win.loadURL('http://127.0.0.1:5173'); // 나중에 빌드 파일로 변경 가능
-        }
-
-        app.whenReady().then(() => {
-        createWindow();
-
-        app.on('activate', () => {
-            if (BrowserWindow.getAllWindows().length === 0) createWindow();
-        });
-        });
-
-        app.on('window-all-closed', () => {
-        if (process.platform !== 'darwin') app.quit();
-        });
-        ```
-    4. electron/package.json 수정
-
-        ```js
-        "scripts": {
-        "start": "electron ."
-        }
-        ```
-        위와 같이 변경
-    
-    5. electron 폴더에서 
-     
-        `npm run start` 실행
-
-        React dev 서버가 떠 있을 때 Electron 창에 React 화면이 뜬다
-        (리액트 서버 켜고 일렉트론 실행)
+- 실제 운영 환경에서 안정적으로 동작하는 시스템 구축
 
 ---
-## clone 받고 할 일 
-1. 가상환경 설치
 
-2. 가상환경 켜기
+### 🧩 주요 기능
 
-3. pip install -r requirements.txt
+1. 예약 관리 대시보드
 
-4. frontend 폴더 -> npm install 
+    - 네이버 예약 정보를 기반으로 예약 상태 확인
 
-5. electron 폴더 -> npm install electron
+    - 예약 상태를 대기 / 입금 확인 / 확정 기준으로 관리
 
-6. .env 넣기
+    - 관리자 입장에서 한눈에 상황을 파악할 수 있는 화면 구성
+
+2. 문자 발송 자동화
+
+    - 예약 접수 시 입금 계좌 안내 문자 자동 발송
+
+    - 입금 확인 시 예약 확정 안내 문자 발송
+
+    - 문자 템플릿을 상황별로 관리 가능
+
+3. 입금 내역 자동 확인
+
+    - 외부 계좌 조회 API 연동
+
+    - 입금자명과 예약자명을 자동 매칭
+
+    - 입금 확인 시 예약 상태 자동 변경
+
+4. 쿠폰(선불) 고객 관리
+
+    - 선불 쿠폰 고객 등록
+
+    - 쿠폰 사용 내역 및 잔여 시간 관리
+
+    - 쿠폰 기반 예약 흐름 지원
 
 ---
-## 작업 스케쥴러 사용법
-1. [일반] 탭
-    - 이름 : ex.알림톡 보내기
-    - 설명 : 알림톡 실행 파일
-    - 사용자가 로그온되어 있지 않아도 실행됨. 가장 높은 권한으로 실행
-2. [트리커] 탭
-    - 새로만들기 ... 클릭
-    - 설정
-        - 시작: 예약
-        - 설정: 주기 정하기
-        - 시작날짜/시간
-    - 사용 체크 
-    - 확인
-3. [동작] 탭 -> 무엇을 실행하는지
-    - 새로 만들기 ...
-    - 동작: 프로그램 시작
-    - 프로그램/스크립트
-        - 가상환경 python 경로: `C:\dev\izi_auto\venv\Scripts\python.exe` 
-        - 인수 추가: `manage.py test_scheduler`
-        - 시작 위치: `C:\dev\izi_auto\backend` (파일 위치에 따라 바꾸기, manage.py 위치한 폴더)
-    - 확인
-4. [조건] 탭
-    - 컴퓨터가 AC 전원일 때만 시작 -> 체크 헤제
-    - 예약된 시간에 컴퓨터를 깨움 -> 체크
-5. [설정] 탭
-    - 예약된 시작을 놓치면 가능한 빨리 실행
-    - 실패하면 다시 시작
-        - 간격: 1분
-        - 시도횟수: 3회
-6. [확인] -> 비밀번호 입력 -> 저장
-7. 등록확인
-    작업 스케줄러 라이브러리 클릭 
-    가운데 목록에 알림톡 테스트, 다음 실행시간, 상태->준비 확인하기
 
+### Tech Stack
 
-* 운영중 쿠폰 이력 문자 보내고 싶을 때
- 위 방법대로 하되, 
- 
- 프로그램/스크립트: C:{폴더위치}\izi_auto\venv\Scripts\python.exe
- 
- 시작위치: C:{폴더위치}\izi_auto\backend
- 
- 인수에 `manage.py send_coupon_usage_sms --send` 넣으면 실제로 발송됨
+#### Frontend
+
+    - React
+
+    - JavaScript
+
+    - Figma (UI 설계)
+
+#### Backend
+
+    - Django
+
+    - Python
+
+    - SQLite (단일 운영 환경)
+
+#### External API
+
+    - 네이버 SENS API (문자 발송)
+
+    - 팝빌(Popbill) 계좌조회 API (입금 확인)
+
+#### Collaboration
+
+    - GitHub
+
+--- 
+
+### 설계
+
+#### 예약 상태 중심 설계
+
+    예약 → 입금 확인 → 확정이라는 흐름을
+    상태(State) 기준으로 설계해
+    상태 변화가 발생할 때마다 다음 작업이 자동으로 실행되도록 구성했습니다.
+
+#### 프론트엔드 구조
+
+    Layout(Header / Content / Footer) 구조 고정
+
+    포맷팅 및 상태 변환 로직을 utils로 분리
+
+    Pagination, Toast 등 공통 UI를 재사용 가능한 컴포넌트로 관리
+
+#### 입금자명 매칭 문제 해결
+
+    실제 운영 중 입금자명이 예약자명과 정확히 일치하지 않아
+    매칭이 실패하는 문제가 발생했습니다.
+
+    이를 해결하기 위해
+
+    1. 반각/전각
+
+    2. 공백
+
+    3. 특수문자 차이
+
+    를 보정하는 문자열 정규화 로직을 추가해
+    매칭 정확도를 개선했습니다.
+
+#### 🚧 운영 중 발생한 이슈와 대응
+
+- 예약 처리 중 신규 예약이 들어와 누락되는 문제
+    
+    → 예약을 지속적으로 탐색하는 로직으로 개선
+
+- 자동화 장시간 실행 시 오류 발생
+
+    → 실행 흐름 안정화 및 예외 처리 추가
+
+---
+
+### 👥 개발 인원 및 역할
+
+개발 인원: 2인 프로젝트
+
+#### 담당 역할
+
+##### 박수민
+
+    프론트엔드 전반 (React)
+
+    백엔드 일부 (Django 기반 문자 발송 로직)
+
+    외부 API 연동 (네이버 SENS, 팝빌)
+
+    운영 중 이슈 대응 및 유지보수
+
+##### 하건수
+
+    백엔드 전반(Django, automation)
+
+    Selenium 이용한 자동화(스크랩 등)
+
+    운영 중 이슈 대응 및 유지보수
+
