@@ -154,6 +154,17 @@
         (리액트 서버 켜고 일렉트론 실행)
 
 ---
+
+## 원클릭 실행 (권장, Windows)
+
+- 시작: `run_izi_auto.bat` 더블클릭
+- 종료: `stop_izi_auto.bat` 더블클릭
+- 실행하면 터미널 창은 backend, monitor만 열립니다.
+- frontend, electron은 백그라운드에서 실행됩니다.
+- 모든 서비스 로그는 루트의 `.izi_auto_logs` 폴더에 저장됩니다.
+- 실행 PID는 루트의 `.izi_auto_pids.txt` 파일로 관리됩니다.
+
+---
 ## clone 받고 할 일 
 1. 가상환경 설치
 
