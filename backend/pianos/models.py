@@ -54,28 +54,42 @@ class CouponCustomer(models.Model):
         verbose_name_plural = '쿠폰 고객 목록'
 
     def refresh_expiry_status(self, today=None):
-        """쿠폰 만료 여부를 확인하고 상태를 갱신합니다."""
-        from django.utils import timezone
         if today is None:
-            today = timezone.now().date()
-        if self.coupon_expires_at and today > self.coupon_expires_at:
-            if self.coupon_status != '만료':
-                self.coupon_status = '만료'
-                self.save(update_fields=['coupon_status', 'updated_at'])
+            today = timezone.localdate()
+
+        new_status = '만료' if self.coupon_expires_at and today > self.coupon_expires_at else '활성'
+
+        if self.coupon_status != new_status:
+            self.coupon_status = new_status
+            self.save(update_fields=['coupon_status', 'updated_at'])
+
         return self.coupon_status
 
     @property
     def is_expired(self):
-        from django.utils import timezone
-        if self.coupon_status == '만료':
-            return True
-        if self.coupon_expires_at and timezone.now().date() > self.coupon_expires_at:
-            return True
-        return False
+        if not self.coupon_expires_at:
+            return False
+        return timezone.localdate() > self.coupon_expires_at
 
     def __str__(self):
         return f"{self.customer_name} ({self.phone_number})"
     
+    def save(self, *args, **kwargs):
+        today = timezone.localdate()
+
+        if self.coupon_expires_at and today > self.coupon_expires_at:
+            self.coupon_status = '만료'
+        else:
+            self.coupon_status = '활성'
+
+        update_fields = kwargs.get("update_fields")
+        if update_fields is not None:
+            update_fields = set(update_fields)
+            update_fields.add("coupon_status")
+            kwargs["update_fields"] = list(update_fields)
+
+        super().save(*args, **kwargs)
+
 class AccountTransaction(models.Model):
     """계좌 거래 내역 테이블 (팝빌 API로부터 수집)"""
     

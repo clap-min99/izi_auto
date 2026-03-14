@@ -83,6 +83,21 @@ class ReservationMonitor:
 
         print(f"🧪 MON.scraper.driver id={id(self.scraper.driver)}")
     
+    def refresh_all_coupon_statuses(self):
+        from pianos.models import CouponCustomer
+        today = timezone.localdate()
+
+        qs = CouponCustomer.objects.all()
+        updated = 0
+
+        for customer in qs:
+            old_status = customer.coupon_status
+            customer.refresh_expiry_status(today=today)
+            if customer.coupon_status != old_status:
+                updated += 1
+
+        print(f"🎫 쿠폰 상태 일괄 갱신 완료: {updated}건 변경")
+
     def handle_change_event_if_needed(self, current_bookings):
         """
         ✅ '변경' 배지 예약(B)이 화면에 있고,
@@ -207,6 +222,9 @@ class ReservationMonitor:
         if self.dry_run:
             print("⚠️ DRY_RUN 모드: DB 업데이트 O, '예약확정/예약취소' 버튼·문자 발송 X (탭 이동/체크박스 클릭은 O)")
         print("=" * 60)
+        
+        # ✅ 모니터 시작 시 쿠폰 상태 전체 동기화
+        self.refresh_all_coupon_statuses()
         
         # 초기 페이지 로드
         self.scraper.driver.get(self.naver_url)
@@ -851,6 +869,8 @@ class ReservationMonitor:
             print(f"   ✅ 상태 변경: {updated_count}건")
         else:
             print(f"   ℹ️ 상태 변경 없음")
+
+    
 
 # class BankSyncAndMatchMonitor:
 #     def __init__(self, dry_run: bool = False, interval_sec: int = 300):
