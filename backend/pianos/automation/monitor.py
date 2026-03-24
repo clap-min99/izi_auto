@@ -319,13 +319,14 @@ class ReservationMonitor:
                 # ✅ 세션/화면 이상 감지 → 새 창으로 복구 (실전)
                 # =========================
                 if self.scraper._looks_like_logged_out():
-                    print("⚠️ 세션 만료/로그아웃/화면이상 감지 → 새 창으로 복구")
-                    self.scraper.reopen_reservation_tab(
-                        self.naver_url,
-                        close_old=True,    # 문제창 닫아버리기 (꼬임 방지)
-                        as_window=True     # 새 창으로 확실히 띄우기
-                    )
-                    continue  # ✅ 복구한 사이클은 건너뛰고 다음 사이클에서 안정적으로 진행
+                    print("⚠️ 세션 만료/로그아웃/화면이상 감지 → 세션 기준 복구")
+                    recovered = self._recover_browser_session("looks_like_logged_out")
+                    if recovered:
+                        continue
+
+                    print("⚠️ 복구 실패 → 5초 후 다음 사이클")
+                    time.sleep(5)
+                    continue
 
 
                 # 2. 예약 리스트 스크래핑 (기본 예약리스트 탭 기준)
@@ -433,15 +434,12 @@ class ReservationMonitor:
                         ("HTTPConnectionPool" in msg) or
                         ("WinError 10061" in msg) or
                         ("no such window" in msg) or
-                        ("web view not found" in msg)
+                        ("web view not found" in msg) or
+                        ("invalid session id" in msg) or
+                        ("disconnected" in msg)
                     ):
-                        print("🧯 드라이버 통신 오류 감지 → 새 창 복구 시도")
-                        self.scraper.reopen_reservation_tab(
-                            self.naver_url,
-                            close_old=True,
-                            as_window=True
-                        )
-                        recovered = True
+                        print("🧯 드라이버/세션 오류 감지 → 세션 기준 복구 시도")
+                        recovered = self._recover_browser_session(msg)
                 except Exception:
                     pass
 
@@ -870,7 +868,52 @@ class ReservationMonitor:
         else:
             print(f"   ℹ️ 상태 변경 없음")
 
-    
+    def _is_driver_usable(self) -> bool:
+        try:
+            driver = self.scraper.driver
+            if driver is None:
+                return False
+
+            handles = driver.window_handles
+            if not handles:
+                return False
+
+            _ = driver.current_url
+            return True
+        except Exception:
+            return False
+
+
+    def _recover_browser_session(self, reason="") -> bool:
+        """
+        복구 로직만 담당
+        1) driver가 아직 살아있으면 같은 driver로 URL 재진입
+        2) 아니면 driver 자체를 재생성
+        """
+        print(f"🧯 브라우저 복구 시작: {reason}")
+
+        if self._is_driver_usable():
+            try:
+                print("   ↪ 기존 driver 재사용 시도")
+                self.scraper.driver.get(self.naver_url)
+                time.sleep(2)
+                print("   ✅ 기존 driver 재사용 복구 성공")
+                return True
+            except Exception as e:
+                print(f"   ⚠️ 기존 driver 재사용 실패: {e}")
+
+        try:
+            print("   ♻️ driver 재생성 복구 시도")
+            self.scraper.restart_driver()
+            self.scraper.driver.get(self.naver_url)
+            time.sleep(3)
+            print("   ✅ driver 재생성 복구 성공")
+            return True
+        except Exception as e:
+            print(f"   ❌ driver 재생성 복구 실패: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
 
 # class BankSyncAndMatchMonitor:
 #     def __init__(self, dry_run: bool = False, interval_sec: int = 300):
