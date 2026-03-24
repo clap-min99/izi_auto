@@ -1,53 +1,46 @@
 @echo off
 setlocal
-
-REM ======================================
-REM 프로젝트 루트
-REM ======================================
 cd /d "%~dp0"
 
 echo ==============================
 echo IZI AUTO START
 echo ==============================
 
-REM ======================================
-REM 1. Django Backend (8000)
-REM ======================================
-echo [1/4] Starting Backend :8000
-start "IZI_BACKEND" /min cmd /c ^
-  "cd backend && ..\venv\Scripts\activate && python manage.py runserver 127.0.0.1:8000"
+echo [1/5] Starting Backend :8000
+start "IZI_BACKEND" cmd /k ^
+  "cd backend && ..\venv\Scripts\python.exe manage.py runserver 127.0.0.1:8000 --noreload"
 
-REM ======================================
-REM 2. Backend 준비 대기 (포트 체크)
-REM ======================================
 echo Waiting for backend to be ready...
 
 :WAIT_BACKEND
 timeout /t 1 /nobreak >nul
-netstat -ano | findstr :8000 >nul
+netstat -ano | findstr ":8000" >nul
 if errorlevel 1 goto WAIT_BACKEND
 
 echo Backend is up.
 
-REM ======================================
-REM 3. Monitor 실행
-REM ======================================
-echo [2/4] Starting Monitor
-start "IZI_MONITOR" /min cmd /c ^
-  "cd backend && ..\venv\Scripts\activate && python pianos\automation\monitor.py"
+timeout /t 2 /nobreak >nul
 
-REM ======================================
-REM 4. Frontend (5173)
-REM ======================================
-echo [3/4] Starting Frontend :5173
+echo [2/5] Starting Chrome Debug :9222
+start "IZI_CHROME_DEBUG" ^
+  "C:\Program Files\Google\Chrome\Application\chrome.exe" ^
+  --remote-debugging-port=9222 ^
+  --user-data-dir="C:\selenium\ChromeProfile"
+
+echo Waiting for Chrome debug port to be ready...
+timeout /t 5 /nobreak >nul
+
+echo [3/5] Starting Monitor
+start "IZI_MONITOR" cmd /k ^
+  "cd backend && ..\venv\Scripts\python.exe -u pianos\automation\monitor.py"
+
+echo [4/5] Starting Frontend :5173
 start "IZI_FRONTEND" /min cmd /c ^
   "cd frontend && npm run dev -- --host 127.0.0.1 --port 5173"
 
-REM ======================================
-REM 5. Electron
-REM ======================================
 timeout /t 3 /nobreak >nul
-echo [4/4] Starting Electron
+
+echo [5/5] Starting Electron
 start "IZI_ELECTRON" cmd /c ^
   "cd electron && npm start"
 

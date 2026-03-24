@@ -12,6 +12,7 @@ import time
 import os
 import sys
 import re
+import subprocess
 
 # ⭐ 현재 파일의 상위 디렉토리들을 sys.path에 추가
 current_dir = os.path.dirname(os.path.abspath(__file__))
@@ -34,7 +35,8 @@ class NaverPlaceScraper:
             dry_run: True면 실제 버튼 클릭 안함 (로그만)
         """
         self.dry_run = dry_run  # ⭐ DRY_RUN 모드 추가
-
+        self.use_existing_chrome = use_existing_chrome
+        
         chrome_options = Options()
         chrome_options.add_argument('--no-sandbox')
         chrome_options.add_argument('--disable-dev-shm-usage')
@@ -70,6 +72,52 @@ class NaverPlaceScraper:
         except Exception as e:
             print(f"❌ 새 Chrome 실행 실패: {e}")
             raise
+
+        
+    def restart_driver(self):
+        def launch_debug_chrome():
+            print("🚀 디버깅 크롬 새로 실행")
+
+            subprocess.Popen([
+                r"C:\Program Files\Google\Chrome\Application\chrome.exe",
+                "--remote-debugging-port=9222",
+                r"--user-data-dir=C:\selenium\ChromeProfile"
+            ])    
+        print("♻️ driver 재생성 시작")
+
+        try:
+            if self.driver:
+                try:
+                    self.driver.quit()
+                except Exception as e:
+                    print(f"   ⚠️ 기존 driver quit 실패(무시): {e}")
+        finally:
+            self.driver = None
+
+        chrome_options = Options()
+        chrome_options.add_argument('--no-sandbox')
+        chrome_options.add_argument('--disable-dev-shm-usage')
+
+        # ⭐ 핵심: 항상 "기존 → 실패 시 새로" 구조
+        try:
+            print("   🔗 기존 Chrome 연결 시도...")
+            chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+            self.driver = self._connect_existing_chrome(chrome_options)
+
+        except Exception as e:
+            print(f"   ❌ 기존 Chrome 없음 → 새로 실행: {e}")
+
+            launch_debug_chrome()
+
+            # ⭐ 크롬 뜰 때까지 대기
+            time.sleep(3)
+
+            chrome_options = Options()
+            chrome_options.add_experimental_option("debuggerAddress", "127.0.0.1:9222")
+
+            self.driver = self._connect_existing_chrome(chrome_options)
+
+        print("✅ driver 재생성 완료")
     
     def get_total_booking_count(self) -> int:
         """
