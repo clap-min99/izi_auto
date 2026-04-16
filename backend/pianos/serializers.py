@@ -170,7 +170,8 @@ class StudioPolicySerializer(serializers.ModelSerializer):
 class RoomPasswordSerializer(serializers.ModelSerializer):
     class Meta:
         model = RoomPassword
-        fields = ["id", "room_name", "room_pw", "updated_at"]
+        fields = ["id", "room_number", "room_name", "room_pw", "updated_at"]
+        read_only_fields = ["room_number"]
 
 class AutomationControlSerializer(serializers.ModelSerializer):
     class Meta:

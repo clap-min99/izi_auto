@@ -14,7 +14,7 @@ from .automation.coupon_manager import get_room_category
 from .automation.sms_sender import SMSSender
 
 
-from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl
+from .models import Reservation, CouponCustomer, CouponHistory, AccountTransaction, MessageTemplate, StudioPolicy, AccountTransaction, RoomPassword, AutomationControl, extract_room_number
 from .serializers import (
     ReservationSerializer,
     CouponCustomerListSerializer,
@@ -530,7 +530,11 @@ class MessageTemplateViewSet(viewsets.ModelViewSet):
             if r:
                 duration_minutes = r.get_duration_minutes()
                 room_name = (r.room_name or "").strip()
-                rp = RoomPassword.objects.filter(room_name=room_name).first()
+                room_number = extract_room_number(room_name)
+                if room_number is not None:
+                    rp = RoomPassword.objects.filter(room_number=room_number).first()
+                else:
+                    rp = RoomPassword.objects.filter(room_name=room_name).first()
                 room_pw = rp.room_pw if rp else ""
                 ctx.update({
                     "customer_name": r.customer_name,

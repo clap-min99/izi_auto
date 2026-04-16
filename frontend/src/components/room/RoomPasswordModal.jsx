@@ -7,22 +7,24 @@ import {
 } from "../api/roomPasswordApi";
 
 const ROOM_LIST = [
-  "Room1_야마하 그랜드",
-  "Room2_삼익 그랜드",
-  "Room3_야마하 그랜드",
-  "Room4_삼익 그랜드",
-  "Room5_가와이 그랜드",
-  "Room6_영창 그랜드",
+  { room_number: 1, room_name: "Room1_야마하 그랜드" },
+  { room_number: 2, room_name: "Room2_삼익 그랜드" },
+  { room_number: 3, room_name: "Room3_야마하 그랜드" },
+  { room_number: 4, room_name: "Room4_삼익 그랜드" },
+  { room_number: 5, room_name: "Room5_가와이 그랜드" },
+  { room_number: 6, room_name: "Room6_영창 그랜드" },
 ];
 
 export default function RoomPasswordModal({ open, onClose, onSaved }) {
-  const [rows, setRows] = useState([]); // { room_name, room_pw, id? }
+  const [rows, setRows] = useState([]); 
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState("");
+
+  // 🔥 room_number 기준 매핑
   const roomMap = useMemo(() => {
     const m = new Map();
-    rows.forEach((r) => m.set(r.room_name, r));
+    rows.forEach((r) => m.set(r.room_number, r));
     return m;
   }, [rows]);
 
@@ -34,14 +36,17 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
 
     fetchRoomPasswords()
       .then((data) => {
-        // DRF pagination 켜져있으면 data.results, 아니면 data
         const list = Array.isArray(data) ? data : data?.results ?? [];
-        const byName = new Map(list.map((x) => [x.room_name, x]));
 
-        const merged = ROOM_LIST.map((name) => {
-          const found = byName.get(name);
+        // 🔥 room_number 기준
+        const byNumber = new Map(list.map((x) => [x.room_number, x]));
+
+        const merged = ROOM_LIST.map((room) => {
+          const found = byNumber.get(room.room_number);
+
           return {
-            room_name: name,
+            room_number: room.room_number,
+            room_name: room.room_name,
             room_pw: found?.room_pw ?? "",
             id: found?.id ?? null,
           };
@@ -55,9 +60,12 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
       .finally(() => setLoading(false));
   }, [open]);
 
-  const handleChange = (roomName, value) => {
+  // 🔥 room_number 기준 변경
+  const handleChange = (roomNumber, value) => {
     setRows((prev) =>
-      prev.map((r) => (r.room_name === roomName ? { ...r, room_pw: value } : r))
+      prev.map((r) =>
+        r.room_number === roomNumber ? { ...r, room_pw: value } : r
+      )
     );
   };
 
@@ -66,36 +74,38 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
     setError("");
 
     try {
-    for (const r of rows) {
-      const pw = (r.room_pw ?? "").trim();
+      for (const r of rows) {
+        const pw = (r.room_pw ?? "").trim();
 
-      if (r.id) {
-        await updateRoomPassword(r.id, { room_pw: pw });
-      } else {
-        const created = await createRoomPassword({
-          room_name: r.room_name,
-          room_pw: pw,
-        });
+        if (r.id) {
+          await updateRoomPassword(r.id, { room_pw: pw });
+        } else {
+          const created = await createRoomPassword({
+            room_name: r.room_name,
+            room_number: r.room_number, // 🔥 명시적으로 전달 (안정성 ↑)
+            room_pw: pw,
+          });
 
-        if (created?.id) {
-          setRows((prev) =>
-            prev.map((x) =>
-              x.room_name === r.room_name ? { ...x, id: created.id } : x
-            )
-          );
+          if (created?.id) {
+            setRows((prev) =>
+              prev.map((x) =>
+                x.room_number === r.room_number
+                  ? { ...x, id: created.id }
+                  : x
+              )
+            );
+          }
         }
       }
+
+      onSaved?.("저장되었습니다");
+      onClose();
+    } catch (e) {
+      setError(e?.message ?? "저장 실패");
+    } finally {
+      setSaving(false);
     }
-
-    onSaved?.("저장되었습니다");
-    onClose();
-
-  } catch (e) {
-    setError(e?.message ?? "저장 실패");
-  } finally {
-    setSaving(false);
-  }
-};
+  };
 
   if (!open) return null;
 
@@ -122,18 +132,19 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
                   <div className={styles.colPw}>비밀번호</div>
                 </div>
 
-                {ROOM_LIST.map((roomName) => {
-                  const r = roomMap.get(roomName) ?? {
-                    room_name: roomName,
+                {ROOM_LIST.map((room) => {
+                  const r = roomMap.get(room.room_number) ?? {
+                    room_number: room.room_number,
+                    room_name: room.room_name,
                     room_pw: "",
                   };
 
                   return (
-                    <div key={roomName} className={styles.row}>
+                    <div key={room.room_number} className={styles.row}>
                       <div className={styles.colRoom}>
                         <input
                           className={styles.readonly}
-                          value={roomName}
+                          value={room.room_name}
                           readOnly
                         />
                       </div>
@@ -142,7 +153,7 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
                           className={styles.input}
                           value={r.room_pw ?? ""}
                           onChange={(e) =>
-                            handleChange(roomName, e.target.value)
+                            handleChange(room.room_number, e.target.value)
                           }
                           placeholder="비밀번호 입력"
                         />
@@ -153,7 +164,7 @@ export default function RoomPasswordModal({ open, onClose, onSaved }) {
               </div>
 
               <div className={styles.hint}>
-                문자 템플릿에서 <b>{"{room_pw}"}</b> 변수를 사용하면 룸명에 맞는
+                문자 템플릿에서 <b>{"{room_pw}"}</b> 변수를 사용하면 룸에 맞는
                 비밀번호가 자동으로 들어가요.
               </div>
             </>

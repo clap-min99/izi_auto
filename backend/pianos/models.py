@@ -4,6 +4,11 @@ from django.db import models
 from django.utils import timezone
 from datetime import datetime
 
+def extract_room_number(room_name: str):
+    """'Room1_야마하 그랜드' → 1, 'Room1_Yamaha Grand' → 1 (번역돼도 동일)"""
+    match = re.search(r'(?i)room\s*(\d+)', room_name or "")
+    return int(match.group(1)) if match else None
+
 def normalize_name(name: str) -> str:
     if not name:
         return ""
@@ -386,12 +391,18 @@ class StudioPolicy(models.Model):
 
 
 class RoomPassword(models.Model):
+    room_number = models.IntegerField(null=True, blank=True, unique=True, verbose_name="룸 번호")
     room_name = models.CharField(max_length=100, unique=True, verbose_name="룸명")
     room_pw = models.CharField(max_length=50, blank=True, default="", verbose_name="비밀번호")
     updated_at = models.DateTimeField(auto_now=True)
+    
+    def save(self, *args, **kwargs):  # 추가: 저장 시 room_number 자동 추출
+        if self.room_number is None:
+            self.room_number = extract_room_number(self.room_name)
+        super().save(*args, **kwargs)
 
-    def __str__(self):
-        return f"{self.room_name}"
+    # def __str__(self):
+    #     return f"{self.room_name}"
     
 class AutomationControl(models.Model):
     """

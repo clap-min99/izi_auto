@@ -14,7 +14,7 @@ import hashlib
 import base64
 from typing import Optional, Dict
 
-from pianos.models import RoomPassword
+from pianos.models import RoomPassword, extract_room_number
 from pianos.automation.coupon_manager import get_room_category
 
 # Django 설정
@@ -114,7 +114,11 @@ class SMSSender:
         room_name = getattr(reservation, "room_name", "")
         pw = ""
         if room_name:
-            rp = RoomPassword.objects.filter(room_name=room_name).first()
+            room_number = extract_room_number(room_name)
+            if room_number is not None:
+                rp = RoomPassword.objects.filter(room_number=room_number).first()
+            else:
+                rp = RoomPassword.objects.filter(room_name=room_name).first()
             pw = rp.room_pw if rp else ""
         ctx = {
             "customer_name": getattr(reservation, "customer_name", ""),
