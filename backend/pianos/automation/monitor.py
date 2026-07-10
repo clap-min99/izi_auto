@@ -300,7 +300,7 @@ class ReservationMonitor:
 
                 # ✅ [여기] 30분 경과 입금대기 자동취소
                 did_actions = False
-                did_actions |= self.cancel_expired_pending_deposits()
+                # did_actions |= self.cancel_expired_pending_deposits()
                 
                 # ★ 1. 5분마다 계좌 내역 동기화
                 if current_time - self.last_account_sync >= self.account_sync_interval:
@@ -376,6 +376,8 @@ class ReservationMonitor:
 
                 did_actions |= handled
 
+                did_actions |= self.cancel_expired_pending_deposits()
+                
                 if handled :
                     self.scraper.refresh_page()
                     time.sleep(2)
