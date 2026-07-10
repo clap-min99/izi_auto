@@ -17,7 +17,7 @@ from django.db import transaction
 from django.db.models import Q
 from django.conf import settings
 from selenium.common.exceptions import NoSuchWindowException, WebDriverException
-from pianos.models import Reservation, AccountTransaction, normalize_name
+from pianos.models import Reservation, AccountTransaction, normalize_name, name_matches
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
 from pianos.automation.utils import is_allowed_customer
@@ -44,61 +44,61 @@ class PaymentMatcher:
             or "web view not found" in msg.lower()
         )
         
-    def _depositor_match_q(self, customer_name: str) -> Q:
-        """
-        입금자명 매칭 조건:
-        - 기본: 완전일치
-        - 보강: 이름이 포함된 경우도 허용 (예: '신한홍길동'에 '홍길동' 포함)
-        - 단, 이름이 너무 짧으면(1글자) 오탐 위험이 커서 포함 매칭 제외
-        """
-        target = normalize_name(customer_name)
-        if len(target) < 2:
-            return Q(normalized_depositor_name__iexact=target)
-        return Q(normalized_depositor_name__iexact=target) | Q(normalized_depositor_name__icontains=target)
+    # def _depositor_match_q(self, customer_name: str) -> Q:
+    #     """
+    #     입금자명 매칭 조건:
+    #     - 기본: 완전일치
+    #     - 보강: 이름이 포함된 경우도 허용 (예: '신한홍길동'에 '홍길동' 포함)
+    #     - 단, 이름이 너무 짧으면(1글자) 오탐 위험이 커서 포함 매칭 제외
+    #     """
+    #     target = normalize_name(customer_name)
+    #     if len(target) < 2:
+    #         return Q(normalized_depositor_name__iexact=target)
+    #     return Q(normalized_depositor_name__iexact=target) | Q(normalized_depositor_name__icontains=target)
 
-    # 잘림 매칭(방향2)을 인정할 최소 비율. 입금자명 길이가 예약명 길이의 이 비율 이상일 때만
-    # "예약명이 입금자명으로 시작"을 매칭으로 본다. (예: 'CHUNSUKJ'(8) vs 'CHUNSUKJUN'(10) → 0.8 통과)
-    _TRUNC_MIN_RATIO = 0.6
+    # # 잘림 매칭(방향2)을 인정할 최소 비율. 입금자명 길이가 예약명 길이의 이 비율 이상일 때만
+    # # "예약명이 입금자명으로 시작"을 매칭으로 본다. (예: 'CHUNSUKJ'(8) vs 'CHUNSUKJUN'(10) → 0.8 통과)
+    # _TRUNC_MIN_RATIO = 0.6
 
-    def _name_matches(self, res_name: str, dep_name: str) -> bool:
-        """
-        예약자명(res_name) ↔ 입금자명(dep_name) 양방향 매칭.
+    # def _name_matches(self, res_name: str, dep_name: str) -> bool:
+    #     """
+    #     예약자명(res_name) ↔ 입금자명(dep_name) 양방향 매칭.
 
-        a = 정규화된 예약자명, b = 정규화된 입금자명
-        1) 완전일치:            a == b
-        2) 방향1(접두어 포함):   입금자명이 예약명을 통째로 포함
-                                예) 은행이 앞에 붙는 경우 '신한홍길동'(b) ⊃ '홍길동'(a)
-                                    → 예약명 2글자 이상일 때만 (오탐 방지)
-        3) 방향2(뒤 잘림):       예약명이 입금자명으로 '시작'
-                                예) 은행이 뒤를 자른 경우 예약 'CHUNSUKJUN'(a) 가
-                                    입금 'CHUNSUKJ'(b) 로 시작
-                                    → 입금자명 4글자 이상 + 길이비율 조건을 만족할 때만
-        """
-        a = normalize_name(res_name)
-        b = normalize_name(dep_name)
+    #     a = 정규화된 예약자명, b = 정규화된 입금자명
+    #     1) 완전일치:            a == b
+    #     2) 방향1(접두어 포함):   입금자명이 예약명을 통째로 포함
+    #                             예) 은행이 앞에 붙는 경우 '신한홍길동'(b) ⊃ '홍길동'(a)
+    #                                 → 예약명 2글자 이상일 때만 (오탐 방지)
+    #     3) 방향2(뒤 잘림):       예약명이 입금자명으로 '시작'
+    #                             예) 은행이 뒤를 자른 경우 예약 'CHUNSUKJUN'(a) 가
+    #                                 입금 'CHUNSUKJ'(b) 로 시작
+    #                                 → 입금자명 4글자 이상 + 길이비율 조건을 만족할 때만
+    #     """
+    #     a = normalize_name(res_name)
+    #     b = normalize_name(dep_name)
 
-        if not a or not b:
-            return False
+    #     if not a or not b:
+    #         return False
 
-        # 1) 완전일치
-        if a == b:
-            return True
+    #     # 1) 완전일치
+    #     if a == b:
+    #         return True
 
-        # 2) 방향1: 입금자명 ⊃ 예약명 (은행 접두어 등)
-        if len(a) >= 2 and a in b:
-            return True
+    #     # 2) 방향1: 입금자명 ⊃ 예약명 (은행 접두어 등)
+    #     if len(a) >= 2 and a in b:
+    #         return True
 
-        # 3) 방향2: 예약명이 입금자명으로 시작 (은행이 뒤를 잘라낸 경우)
-        #    - 너무 짧은 입금자명(예: 'PARK'만)이 긴 예약명에 걸리는 오탐을 막기 위해
-        #      길이 하한(4)과 비율 하한(_TRUNC_MIN_RATIO)을 동시에 요구
-        if len(b) >= 4 and a.startswith(b) and len(b) >= len(a) * self._TRUNC_MIN_RATIO:
-            return True
+    #     # 3) 방향2: 예약명이 입금자명으로 시작 (은행이 뒤를 잘라낸 경우)
+    #     #    - 너무 짧은 입금자명(예: 'PARK'만)이 긴 예약명에 걸리는 오탐을 막기 위해
+    #     #      길이 하한(4)과 비율 하한(_TRUNC_MIN_RATIO)을 동시에 요구
+    #     if len(b) >= 4 and a.startswith(b) and len(b) >= len(a) * self._TRUNC_MIN_RATIO:
+    #         return True
 
-        return False
+    #     return False
 
     def _filter_by_name(self, transactions, name):
-        """이름 조건(_name_matches)으로만 거래 리스트를 걸러낸다."""
-        return [t for t in transactions if self._name_matches(name, t.depositor_name)]
+        """이름 조건(name_matches)으로만 거래 리스트를 걸러낸다."""
+        return [t for t in transactions if name_matches(name, t.depositor_name)]
     
     def check_pending_payments(self):
         """
@@ -252,7 +252,7 @@ class PaymentMatcher:
         ).order_by('transaction_date', 'transaction_time')
 
         for t in candidates:
-            if self._name_matches(name, t.depositor_name):
+            if name_matches(name, t.depositor_name):
                 return [t]
         return []
     
@@ -553,7 +553,7 @@ class PaymentMatcher:
         ).order_by('transaction_date', 'transaction_time')
 
         for t in candidates:
-            if self._name_matches(name, t.depositor_name):
+            if name_matches(name, t.depositor_name):
                 return t
         return None
     
