@@ -32,7 +32,7 @@ def name_matches(res_name: str, dep_name: str) -> bool:
     3) 방향2(뒤 잘림):       예약명이 입금자명으로 '시작'
                             예) 은행이 뒤를 자른 경우 예약 'CHUNSUKJUN'(a) 가
                                 입금 'CHUNSUKJ'(b) 로 시작
-                                → 입금자명 4글자 이상 + 길이비율 조건을 만족할 때만
+                                 → 입금자명 4글자 이상 + (길이비율 조건 또는 '첫 단어 온전 포함' 조건)
     """
     a = normalize_name(res_name)
     b = normalize_name(dep_name)
@@ -51,8 +51,20 @@ def name_matches(res_name: str, dep_name: str) -> bool:
     # 3) 방향2: 예약명이 입금자명으로 시작 (은행이 뒤를 잘라낸 경우)
     #    - 너무 짧은 입금자명(예: 'PARK'만)이 긴 예약명에 걸리는 오탐을 막기 위해
     #      길이 하한(4)과 비율 하한(NAME_TRUNCATION_MIN_RATIO)을 동시에 요구
-    if len(b) >= 4 and a.startswith(b) and len(b) >= len(a) * NAME_TRUNCATION_MIN_RATIO:
-        return True
+    if len(b) >= 4 and a.startswith(b):
+        # 3-a) 길이비율: 한 단어짜리(한국어 등) 이름은 대개 이 조건으로 걸러진다.
+        if len(b) >= len(a) * NAME_TRUNCATION_MIN_RATIO:
+            return True
+
+        # 3-b) 첫 단어 온전 포함: 외국인처럼 여러 단어 이름은 은행이 바이트 제한 때문에
+        #      비율 조건을 못 넘길 만큼 짧게 잘리는 경우가 흔하다
+        # 첫 단어(성/이름 앞부분)가 안 잘리고 통째로 남아있으면
+        #      그 뒤가 얼마나 잘렸든 매칭으로 인정한다.
+        res_name_stripped = (res_name or "").strip()
+        if res_name_stripped:
+            first_token = normalize_name(res_name_stripped.split()[0])
+            if first_token and len(b) >= len(first_token):
+                return True
 
     return False
 
