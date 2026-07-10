@@ -4,6 +4,8 @@ from django.db import models
 from django.utils import timezone
 from datetime import datetime
 
+
+
 def normalize_name(name: str) -> str:
     if not name:
         return ""
@@ -11,6 +13,60 @@ def normalize_name(name: str) -> str:
     name = re.sub(r"\s+", "", name)             # 공백 제거
     return name.upper()
 
+# 잘림 매칭(방향2)을 인정할 최소 비율. 입금자명 길이가 예약명 길이의 이 비율 이상일 때만
+# "예약명이 입금자명으로 시작"을 매칭으로 본다. (예: 'CHUNSUKJ'(8) vs 'CHUNSUKJUN'(10) → 0.8 통과)
+NAME_TRUNCATION_MIN_RATIO = 0.6
+
+
+def name_matches(res_name: str, dep_name: str) -> bool:
+    """
+    예약자명(res_name) ↔ 입금자명(dep_name) 양방향 매칭.
+    (예약/입금 매칭과 관련된 모든 곳에서 이 함수 하나만 사용할 것 — 매칭 규칙이
+    두 군데로 나뉘면 한쪽만 고쳤을 때 다시 매칭 오류가 재발한다.)
+
+    a = 정규화된 예약자명, b = 정규화된 입금자명
+    1) 완전일치:            a == b
+    2) 방향1(접두어 포함):   입금자명이 예약명을 통째로 포함
+                            예) 은행이 앞에 붙는 경우 '신한홍길동'(b) ⊃ '홍길동'(a)
+                                → 예약명 2글자 이상일 때만 (오탐 방지)
+    3) 방향2(뒤 잘림):       예약명이 입금자명으로 '시작'
+                            예) 은행이 뒤를 자른 경우 예약 'CHUNSUKJUN'(a) 가
+                                입금 'CHUNSUKJ'(b) 로 시작
+                                 → 입금자명 4글자 이상 + (길이비율 조건 또는 '첫 단어 온전 포함' 조건)
+    """
+    a = normalize_name(res_name)
+    b = normalize_name(dep_name)
+
+    if not a or not b:
+        return False
+
+    # 1) 완전일치
+    if a == b:
+        return True
+
+    # 2) 방향1: 입금자명 ⊃ 예약명 (은행 접두어 등)
+    if len(a) >= 2 and a in b:
+        return True
+
+    # 3) 방향2: 예약명이 입금자명으로 시작 (은행이 뒤를 잘라낸 경우)
+    #    - 너무 짧은 입금자명(예: 'PARK'만)이 긴 예약명에 걸리는 오탐을 막기 위해
+    #      길이 하한(4)과 비율 하한(NAME_TRUNCATION_MIN_RATIO)을 동시에 요구
+    if len(b) >= 4 and a.startswith(b):
+        # 3-a) 길이비율: 한 단어짜리(한국어 등) 이름은 대개 이 조건으로 걸러진다.
+        if len(b) >= len(a) * NAME_TRUNCATION_MIN_RATIO:
+            return True
+
+        # 3-b) 첫 단어 온전 포함: 외국인처럼 여러 단어 이름은 은행이 바이트 제한 때문에
+        #      비율 조건을 못 넘길 만큼 짧게 잘리는 경우가 흔하다
+        # 첫 단어(성/이름 앞부분)가 안 잘리고 통째로 남아있으면
+        #      그 뒤가 얼마나 잘렸든 매칭으로 인정한다.
+        res_name_stripped = (res_name or "").strip()
+        if res_name_stripped:
+            first_token = normalize_name(res_name_stripped.split()[0])
+            if first_token and len(b) >= len(first_token):
+                return True
+
+    return False
 
 class CouponCustomer(models.Model):
     """쿠폰 고객 테이블"""

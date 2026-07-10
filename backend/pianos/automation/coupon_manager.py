@@ -146,7 +146,13 @@ class CouponManager:
         try:
             # 1. 네이버 확정 버튼 클릭
             if not self.dry_run:
-                scraper.confirm_in_pending_tab(reservation.naver_booking_id)
+                # scraper.confirm_in_pending_tab(reservation.naver_booking_id)
+                confirmed_on_naver = scraper.confirm_in_pending_tab(reservation.naver_booking_id)
+                if not confirmed_on_naver:
+                    # ✅ 네이버 확정이 실제로 실패했으면 쿠폰 차감/DB 확정을 하면 안 된다.
+                    # (confirm_in_pending_tab은 실패해도 예외 없이 False만 반환하므로 반드시 체크)
+                    print(f"   ❌ 네이버 확정 실패 → 쿠폰 차감 스킵: {reservation.naver_booking_id}")
+                    return False
             else:
                 print("   [DRY_RUN] 네이버 확정 시뮬레이션")
             

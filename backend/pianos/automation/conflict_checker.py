@@ -15,7 +15,7 @@ django.setup()
 
 from django.db import transaction
 from django.db.models import Q
-from pianos.models import Reservation, AccountTransaction
+from pianos.models import Reservation, AccountTransaction, name_matches
 from pianos.scraper.naver_scraper import NaverPlaceScraper
 from pianos.automation.sms_sender import SMSSender
 from pianos.automation.utils import is_allowed_customer
@@ -199,15 +199,17 @@ class ConflictChecker:
             bool: 입금 여부
         """
         # 계좌 내역에서 이 예약자의 입금 확인
-        payment_exists = AccountTransaction.objects.filter(
+        candidates = AccountTransaction.objects.filter(
             transaction_type='입금',
-            depositor_name__icontains=reservation.customer_name,
+            # depositor_name__icontains=reservation.customer_name,
             amount=reservation.price,
             transaction_date__gte=reservation.created_at.date(),
             match_status__in=['확정전', '확정완료']  # 확정전 or 확정완료
-        ).exists()
+        )
+        return any(name_matches(reservation.customer_name, t.depositor_name) for t in candidates)
+        # ).exists()
         
-        return payment_exists
+        # return payment_exists
     
     def _mark_transaction_as_cancelled(self, reservation):
         """
@@ -219,20 +221,22 @@ class ConflictChecker:
         )
         
         for trans in transactions:
-            trans.match_status = '취소'  # ★ 취소 상태로 변경
+            trans.match_status = '취소'  # 취소 상태로 변경
             trans.save()
             print(f"         - 거래 내역 취소 처리: {trans.transaction_id}")
         
         # 아직 매칭 안된 거래도 찾아서 취소 처리
-        unmatched_transactions = AccountTransaction.objects.filter(
+        unmatched_candidates = AccountTransaction.objects.filter(
             transaction_type='입금',
-            depositor_name__icontains=reservation.customer_name,
+            # depositor_name__icontains=reservation.customer_name,
             amount=reservation.price,
             transaction_date__gte=reservation.created_at.date(),
             match_status='확정전'
         )
         
-        for trans in unmatched_transactions:
+        for trans in unmatched_candidates:
+            if not name_matches(reservation.customer_name, trans.depositor_name):
+                continue
             trans.match_status = '취소'
             trans.save()
             print(f"         - 미매칭 거래 취소 처리: {trans.transaction_id}")
