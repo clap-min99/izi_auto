@@ -43,6 +43,7 @@ class PaymentMatcher:
             or "target window already closed" in msg.lower()
             or "web view not found" in msg.lower()
         )
+        
     def _depositor_match_q(self, customer_name: str) -> Q:
         """
         입금자명 매칭 조건:
@@ -55,7 +56,49 @@ class PaymentMatcher:
             return Q(normalized_depositor_name__iexact=target)
         return Q(normalized_depositor_name__iexact=target) | Q(normalized_depositor_name__icontains=target)
 
+    # 잘림 매칭(방향2)을 인정할 최소 비율. 입금자명 길이가 예약명 길이의 이 비율 이상일 때만
+    # "예약명이 입금자명으로 시작"을 매칭으로 본다. (예: 'CHUNSUKJ'(8) vs 'CHUNSUKJUN'(10) → 0.8 통과)
+    _TRUNC_MIN_RATIO = 0.6
 
+    def _name_matches(self, res_name: str, dep_name: str) -> bool:
+        """
+        예약자명(res_name) ↔ 입금자명(dep_name) 양방향 매칭.
+
+        a = 정규화된 예약자명, b = 정규화된 입금자명
+        1) 완전일치:            a == b
+        2) 방향1(접두어 포함):   입금자명이 예약명을 통째로 포함
+                                예) 은행이 앞에 붙는 경우 '신한홍길동'(b) ⊃ '홍길동'(a)
+                                    → 예약명 2글자 이상일 때만 (오탐 방지)
+        3) 방향2(뒤 잘림):       예약명이 입금자명으로 '시작'
+                                예) 은행이 뒤를 자른 경우 예약 'CHUNSUKJUN'(a) 가
+                                    입금 'CHUNSUKJ'(b) 로 시작
+                                    → 입금자명 4글자 이상 + 길이비율 조건을 만족할 때만
+        """
+        a = normalize_name(res_name)
+        b = normalize_name(dep_name)
+
+        if not a or not b:
+            return False
+
+        # 1) 완전일치
+        if a == b:
+            return True
+
+        # 2) 방향1: 입금자명 ⊃ 예약명 (은행 접두어 등)
+        if len(a) >= 2 and a in b:
+            return True
+
+        # 3) 방향2: 예약명이 입금자명으로 시작 (은행이 뒤를 잘라낸 경우)
+        #    - 너무 짧은 입금자명(예: 'PARK'만)이 긴 예약명에 걸리는 오탐을 막기 위해
+        #      길이 하한(4)과 비율 하한(_TRUNC_MIN_RATIO)을 동시에 요구
+        if len(b) >= 4 and a.startswith(b) and len(b) >= len(a) * self._TRUNC_MIN_RATIO:
+            return True
+
+        return False
+
+    def _filter_by_name(self, transactions, name):
+        """이름 조건(_name_matches)으로만 거래 리스트를 걸러낸다."""
+        return [t for t in transactions if self._name_matches(name, t.depositor_name)]
     
     def check_pending_payments(self):
         """
@@ -201,14 +244,17 @@ class PaymentMatcher:
         Returns:
             QuerySet: 매칭된 거래 내역들
         """
-        q = self._depositor_match_q(name)
-        return AccountTransaction.objects.filter(
-            q,
+        candidates = AccountTransaction.objects.filter(
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
             amount=amount,
             transaction_date__gte=from_date
-        ).order_by('transaction_date', 'transaction_time')[:1]
+        ).order_by('transaction_date', 'transaction_time')
+
+        for t in candidates:
+            if self._name_matches(name, t.depositor_name):
+                return [t]
+        return []
     
     def _find_split_transactions(self, name, total_amount, from_date):
         """
@@ -218,14 +264,15 @@ class PaymentMatcher:
             list: 매칭된 거래 내역 리스트
         """
         # 해당 고객의 확정전 입금 내역 조회
-        q = self._depositor_match_q(name)
-        candidate_transactions = AccountTransaction.objects.filter(
-            q,
+        # (이름은 파이썬에서 양방향 판정 → combinations 전에 반드시 이름으로 먼저 걸러야
+        #  다른 사람 입금이 조합에 섞이지 않는다)
+        base_qs = AccountTransaction.objects.filter(
             transaction_type='입금',
             match_status='확정전',  # ★ 확정전 상태만
             transaction_date__gte=from_date
         ).order_by('transaction_date', 'transaction_time')
-        
+        candidate_transactions = self._filter_by_name(base_qs, name)
+
         # 조합 찾기 (최대 5개까지)
         from itertools import combinations
         
@@ -282,9 +329,10 @@ class PaymentMatcher:
                     confirmed_count += 1
 
                 for trans in transactions:
-                    trans.match_status = '확정완료'
-                    trans.save(update_fields=['match_status', 'updated_at'])
-                    trans.matched_reservations.set(confirmed_reservations)
+                    if confirmed_reservations:   # 실제로 확정된 예약이 하나라도 있을 때만
+                        trans.match_status = '확정완료'
+                        trans.save(update_fields=['match_status', 'updated_at'])
+                        trans.matched_reservations.set(confirmed_reservations)
 
             print(f"      ✅ 입금 확인 처리 완료!")
             print(f"         - 확정 예약: {confirmed_count}건")
@@ -485,15 +533,17 @@ class PaymentMatcher:
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
         name = reservation.normalized_customer_name or reservation.customer_name
-        q = self._depositor_match_q(name)
-
-        return AccountTransaction.objects.filter(
-            q,
+        candidates = AccountTransaction.objects.filter(
             transaction_type='입금',
             amount=reservation.price,
             transaction_date__gte=reservation.created_at.date(),
             match_status='확정전'
-        ).order_by('transaction_date', 'transaction_time').first()
+        ).order_by('transaction_date', 'transaction_time')
+
+        for t in candidates:
+            if self._name_matches(name, t.depositor_name):
+                return t
+        return None
     
     def _cancel_loser(self, reservation, reason, trans=None) -> bool:
         """
