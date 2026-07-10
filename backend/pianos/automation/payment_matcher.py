@@ -328,15 +328,27 @@ class PaymentMatcher:
                     confirmed_reservations.append(res)
                     confirmed_count += 1
 
-                for trans in transactions:
-                    if confirmed_reservations:   # 실제로 확정된 예약이 하나라도 있을 때만
+                # ⚠️ transactions는 reservations '전체 합계'와 매칭된 것이므로,
+                # 일부 예약만 확정됐을 때 거래를 확정완료로 닫아버리면
+                # 나머지 예약분 금액이 아무 예약에도 안 걸린 채로 사라진 것처럼 보인다.
+                # → 그룹 전원이 확정된 경우에만 거래를 확정완료로 닫는다.
+                all_confirmed = confirmed_reservations and len(confirmed_reservations) == len(reservations)
+
+                if all_confirmed:
+                    for trans in transactions:
                         trans.match_status = '확정완료'
                         trans.save(update_fields=['match_status', 'updated_at'])
                         trans.matched_reservations.set(confirmed_reservations)
+                elif confirmed_reservations:
+                    print(
+                        f"      ⚠️ 일부만 확정됨({confirmed_count}/{len(reservations)}) "
+                        f"→ 거래 매칭은 보류(확정전 유지), 수동 확인 필요"
+                    )
 
             print(f"      ✅ 입금 확인 처리 완료!")
             print(f"         - 확정 예약: {confirmed_count}건")
-            print(f"         - 매칭 거래: {len(transactions)}건")
+            # 
+            print(f"         - 매칭 거래: {len(transactions) if all_confirmed else 0}건")
             return confirmed_count
 
         except Exception as e:
