@@ -125,11 +125,16 @@ class NaverPlaceScraper:
         실패하면 -1 반환.
         """
         try:
-            # '예약' 라벨 옆 숫자 em (클래스는 바뀔 수 있어 contains로 잡음)
+            # 상단 건수 라벨의 em 태그
+            # ⚠️ 예전엔 "예약 N건"처럼 앞에 '예약'이라는 글자가 붙어있다고 가정하고
+            #    그 텍스트를 조상 조건으로 걸었는데, 지금은 그냥 "N건"만 표시돼서
+            #    '예약' 텍스트 조건에 걸려 못 찾고 있었음. 텍스트 대신 안정적인
+            #    control-label 클래스로 범위를 잡도록 변경(클래스 해시는 여전히 contains로 방어).
             el = WebDriverWait(self.driver, 5).until(
                 EC.presence_of_element_located((
                     By.XPATH,
-                    "//span[contains(.,'예약')]/em[contains(@class,'BookingListView__number')]"
+                    "//span[contains(@class,'BookingListView__control-label')]"
+                    "//em[contains(@class,'BookingListView__number')]"
                 ))
             )
             txt = (el.text or "").strip()
@@ -140,9 +145,11 @@ class NaverPlaceScraper:
     def scroll_booking_list_to_bottom(self, max_wait_sec: int = 20, pause: float = 0.6):
         """
         예약 리스트 컨테이너(무한스크롤) 끝까지 내려서 모든 예약 로드
-        - 컨테이너: div.BookingListView__booking-list-table-wrap__IbvCi
+        - 컨테이너: [class*='BookingListView__booking-list-table-wrap']
+          (2026-09 네이버 리빌드로 해시가 __IbvCi → __8Pbpn 로 변경됨.
+           해시가 또 바뀌어도 안 깨지도록 접두사 매칭으로 고정)
         """
-        container_sel = "div.BookingListView__booking-list-table-wrap__IbvCi"
+        container_sel = "[class*='BookingListView__booking-list-table-wrap']"
         container = self.driver.find_element(By.CSS_SELECTOR, container_sel)
 
         # ✅ 항상 맨 위에서 시작 (중간 위치 시작 방지)
@@ -212,8 +219,8 @@ class NaverPlaceScraper:
                 self.scroll_booking_list_to_bottom(max_wait_sec=25, pause=0.7)
 
                 booking_rows = self.driver.find_elements(
-                    By.CLASS_NAME,
-                    "BookingListView__contents-user__xNWR6"
+                    By.CSS_SELECTOR,
+                    "[class*='BookingListView__contents-user']"
                 )
                 current = len(booking_rows)
 
@@ -231,7 +238,7 @@ class NaverPlaceScraper:
                 if current == last_count:
                     print("⚠️ 스크롤 후 row 수 변화 없음 → 추가 스크롤/대기 후 재시도")
                     try:
-                        container_sel = "div.BookingListView__booking-list-table-wrap__IbvCi"
+                        container_sel = "[class*='BookingListView__booking-list-table-wrap']"
                         container = self.driver.find_element(By.CSS_SELECTOR, container_sel)
                         # 아래로 더 여러 번 쭉 밀기
                         for _ in range(3):
@@ -243,7 +250,7 @@ class NaverPlaceScraper:
                 last_count = current
 
             # 여기서 실제 파싱 진행
-            booking_rows = self.driver.find_elements(By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
+            booking_rows = self.driver.find_elements(By.CSS_SELECTOR, "[class*='BookingListView__contents-user']")
             bookings = []
             for row in booking_rows:
                 booking = self._parse_booking_row(row)
@@ -268,38 +275,39 @@ class NaverPlaceScraper:
         """예약 행 하나 파싱"""
         try:
             # 1) 상태 (확정 / 신청 등)
+            # 해시(__89OjA)가 __-xJ-b 로 바뀐 적이 있어 접두사 매칭으로 고정
             status_el = row.find_element(
                 By.CSS_SELECTOR,
-                ".BookingListView__state__89OjA .label"
+                "[class*='BookingListView__state'] .label"
             )
             status = status_el.text.strip()
 
-            # 2) 예약자 이름
+            # 2) 예약자 이름 (해시 __snplV → __lOxNX 변경됨)
             name_el = row.find_element(
-                By.CLASS_NAME,
-                "BookingListView__name-ellipsis__snplV"
+                By.CSS_SELECTOR,
+                "[class*='BookingListView__name-ellipsis']"
             )
             customer_name = name_el.text.strip()
 
             is_proxy = False
             try:
-                # 라벨이 있으면 보통 "대리예약" 텍스트가 들어감
-                label_els = row.find_elements(By.CSS_SELECTOR, "span.BookingListView__label__BzZL5")
+                # 라벨이 있으면 보통 "대리예약" 텍스트가 들어감 (해시 __BzZL5 → __XMDpz 변경됨)
+                label_els = row.find_elements(By.CSS_SELECTOR, "[class*='BookingListView__label']")
                 is_proxy = any(("대리예약" in (el.text or "").strip()) for el in label_els)
             except Exception:
                 is_proxy = False
 
-            # 3) 전화번호
+            # 3) 전화번호 (해시 __i04wO → __XhSA- 변경됨)
             phone_el = row.find_element(
                 By.CSS_SELECTOR,
-                ".BookingListView__phone__i04wO span"
+                "[class*='BookingListView__phone'] span"
             )
             phone_number = phone_el.text.strip()
 
-            # 4) 네이버 예약번호
+            # 4) 네이버 예약번호 (해시 __33dBa → __2f8Ix 변경됨)
             book_id_el = row.find_element(
-                By.CLASS_NAME,
-                "BookingListView__book-number__33dBa"
+                By.CSS_SELECTOR,
+                "[class*='BookingListView__book-number']"
             )
             raw_booking_id = (book_id_el.text or "").strip()
             is_change_badge = ("변경" in raw_booking_id)
@@ -311,10 +319,10 @@ class NaverPlaceScraper:
                 return None
             naver_booking_id = m.group(0)
 
-            # 5) 예약일시 "25. 12. 10.(수) 오전 11:00~12:00"
+            # 5) 예약일시 "25. 12. 10.(수) 오전 11:00~12:00" (해시 __F7BCG → __tEIDm 변경됨)
             datetime_str = row.find_element(
-                By.CLASS_NAME,
-                "BookingListView__book-date__F7BCG"
+                By.CSS_SELECTOR,
+                "[class*='BookingListView__book-date']"
             ).text.strip()
             parsed_datetime = parse_reservation_datetime(datetime_str)
 
@@ -328,19 +336,19 @@ class NaverPlaceScraper:
             start_time = parsed_datetime["start_time"]
             end_time = parsed_datetime["end_time"]
 
-            # 6) 룸 이름 (title 속성에 들어 있음)
+            # 6) 룸 이름 (title 속성에 들어 있음) (해시 __a+wPh → __NcbHk 변경됨)
             room_el = row.find_element(
                 By.CSS_SELECTOR,
-                ".BookingListView__host__a\\+wPh"
+                "[class*='BookingListView__host']"
             )
             room_name = room_el.get_attribute("title") or room_el.text.strip()
 
-            # 7) 총 금액 "11,000원"
+            # 7) 총 금액 "11,000원" (해시 __Y2qoz → __uOOlX 변경됨)
             price = 0
             try:
                 price_el = row.find_element(
-                    By.CLASS_NAME,
-                    "BookingListView__total-price__Y2qoz"
+                    By.CSS_SELECTOR,
+                    "[class*='BookingListView__total-price']"
                 )
                 price_str = (
                     price_el.get_attribute("innerText")
@@ -470,15 +478,15 @@ class NaverPlaceScraper:
             # 예약 행들 로딩될 때까지 기다리기
             rows = WebDriverWait(self.driver, 10).until(
                 EC.presence_of_all_elements_located(
-                    (By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
+                    (By.CSS_SELECTOR, "[class*='BookingListView__contents-user']")
                 )
             )
 
             for row in rows:
                 try:
                     book_no_el = row.find_element(
-                        By.CLASS_NAME,
-                        "BookingListView__book-number__33dBa"
+                        By.CSS_SELECTOR,
+                        "[class*='BookingListView__book-number']"
                     )
                     raw = (book_no_el.text or "").strip()
 
@@ -597,19 +605,19 @@ class NaverPlaceScraper:
 
             # 4) 확정 완료 후 사이드바가 확정 상태로 바뀌는 시간 대기(너무 짧으면 닫기 실패 가능)
             WebDriverWait(self.driver, 8).until(
-                EC.presence_of_element_located((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[class*='SideFrame__close']"))
             )
 
             # 5) 닫기 클릭
             close_btn = WebDriverWait(self.driver, 8).until(
-                EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+                EC.element_to_be_clickable((By.CSS_SELECTOR, "[class*='SideFrame__close']"))
             )
             self.driver.execute_script("arguments[0].click();", close_btn)
 
             # 6) 새로고침
             self.refresh_page()
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[class*='BookingListView__contents-user']"))
             )
 
             print(f"✅ 네이버 예약 확정 완료(2단계+닫기+새로고침): {naver_booking_id}")
@@ -690,7 +698,7 @@ class NaverPlaceScraper:
             # 4) 취소 완료 후 닫기(있으면)
             try:
                 close_btn = WebDriverWait(self.driver, 6).until(
-                    EC.element_to_be_clickable((By.CSS_SELECTOR, "button.SideFrame__close__oKyEZ"))
+                    EC.element_to_be_clickable((By.CSS_SELECTOR, "[class*='SideFrame__close']"))
                 )
                 self.driver.execute_script("arguments[0].click();", close_btn)
             except Exception:
@@ -699,7 +707,7 @@ class NaverPlaceScraper:
             # 5) 새로고침
             self.refresh_page()
             WebDriverWait(self.driver, 10).until(
-                EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+                EC.presence_of_element_located((By.CSS_SELECTOR, "[class*='BookingListView__contents-user']"))
             )
 
             print(f"✅ 네이버 예약 취소 완료(2단계+사유입력): {naver_booking_id}")
@@ -750,14 +758,15 @@ class NaverPlaceScraper:
                 return True
 
             # 예약 리스트 row 클래스가 안 보이면 (로그인/권한/에러 화면일 가능성)
-            rows = self.driver.find_elements(By.CLASS_NAME, "BookingListView__contents-user__xNWR6")
+            # ⚠️ 해시(__xNWR6)가 네이버 리빌드로 __oA+jA 로 바뀐 적이 있어 접두사 매칭으로 고정
+            rows = self.driver.find_elements(By.CSS_SELECTOR, "[class*='BookingListView__contents-user']")
             if rows:
                 return False
 
-            # 혹시 로딩/다른 화면이면 짧게라도 기다려보고 재확인
+            # 혹시 로딩/다른 화면이면 좀 더 기다려보고 재확인 (2초 → 8초로 여유)
             try:
-                WebDriverWait(self.driver, 2).until(
-                    EC.presence_of_element_located((By.CLASS_NAME, "BookingListView__contents-user__xNWR6"))
+                WebDriverWait(self.driver, 8).until(
+                    EC.presence_of_element_located((By.CSS_SELECTOR, "[class*='BookingListView__contents-user']"))
                 )
                 return False
             except Exception:
@@ -831,11 +840,17 @@ class NaverPlaceScraper:
             if login_inputs:
                 return True
 
-            # 3) 예약 페이지 핵심 요소 존재 여부(너희 페이지에 맞게 1개만 잡아도 됨)
-            # 예: 예약 리스트가 반드시 존재하는 영역 selector
-            anchors = d.find_elements("css selector", "[data-testid='booking-list'], .booking_list, .ReservationList")
-            # 위 셀렉터는 예시라서, 네가 실제로 쓰는 예약 리스트 셀렉터 1개로 바꾸는 걸 추천
-            # anchors가 0이면 바로 로그아웃이라고 단정하면 오탐이 있을 수 있으니 URL/login_inputs로 1차 필터 후 보조로만 써.
+            # 3) 예약 페이지 핵심 요소 존재 여부
+            #    ⚠️ 예전엔 존재하지도 않는 예시 셀렉터를 찾아놓고 결과를 안 쓰는 죽은 코드였음.
+            #    실제 셀렉터([class*='BookingListView__contents-user'])로 교체하되,
+            #    여기서 바로 True를 리턴하지는 않음 — anchors 미검출은 "해시 변경/로딩 지연" 같은
+            #    화면 이상일 수도 있어서, 그건 monitor.py의 _looks_like_logged_out()이 별도로
+            #    잡아 자동 복구를 시도함. 여기(is_logged_out)는 SMS 발송 + 자동화 전체 중단까지
+            #    가는 "확정 로그아웃" 판정이라, URL/로그인폼 두 신호로 이미 확실할 때만 True를 반환하고
+            #    anchors는 진단용 로그로만 남겨서 오탐으로 인한 알림 남발을 막음.
+            anchors = d.find_elements("css selector", "[class*='BookingListView__contents-user']")
+            if not anchors:
+                print("   ℹ️ is_logged_out: 예약 리스트 요소 없음(URL/로그인폼은 정상) → 확정 로그아웃 아님, 화면복구 로직에 위임")
             return False
 
         except WebDriverException:
