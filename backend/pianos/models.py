@@ -62,7 +62,16 @@ def name_matches(res_name: str, dep_name: str) -> bool:
         #      그 뒤가 얼마나 잘렸든 매칭으로 인정한다.
         res_name_stripped = (res_name or "").strip()
         if res_name_stripped:
-            first_token = normalize_name(res_name_stripped.split()[0])
+            tokens = res_name_stripped.split()
+ 
+            # 3-b-1) 예약자명에 공백이 아예 없는 경우(외국인 이름을 붙여 입력한 경우 등)
+            #        → 성/이름 경계를 알 방법이 없으므로, 이미 통과한
+            #          "입금자명 4자 이상 + 예약자명이 그걸로 시작함" 조건만으로 인정한다.
+            #          (예: customer_name='zhaoruiping', 입금자명='ZHAO')
+            if len(tokens) == 1:
+                return True
+ 
+            first_token = normalize_name(tokens[0])
             if first_token and len(b) >= len(first_token):
                 return True
 
