@@ -27,6 +27,7 @@ from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
 from pianos.automation.coupon_manager import CouponManager
 from pianos.automation.utils import is_allowed_customer
+from pianos.automation import log_tee
 
 from django.utils import timezone
 # 알림톡(2)
@@ -458,13 +459,13 @@ class ReservationMonitor:
 
     def cancel_expired_pending_deposits(self):
         """
-        created_at 기준 30분 동안 입금이 확인되지 않은 '입금대기' 예약 자동 취소
+        created_at 기준 40분 동안 입금이 확인되지 않은 '입금대기' 예약 자동 취소
         - 대상: 일반예약(쿠폰 X) + 신청 + 계좌안내 문자 전송완료
         - 네이버 화면 범위(오늘~한달) 안의 예약일만 취소 시도
         """
         now = timezone.now()
         # 입금 대기 시간 조정 현재 30분
-        cutoff = now - timedelta(minutes=30)
+        cutoff = now - timedelta(minutes=40)
 
         today = timezone.localdate()
         end_date = today + timedelta(days=30)  # 네이버 필터와 동일하게
@@ -950,6 +951,9 @@ class ReservationMonitor:
     #     self.matcher.handle_first_payment_wins()
 
 def main():
+    # 콘솔 출력을 날짜별 로그 파일에도 저장
+    log_tee.install()
+
     # 네이버 예약 관리 페이지 URL
     NAVER_URL = os.getenv('NAVER_RESERVATION_URL', '')
     

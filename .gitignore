@@ -68,3 +68,6 @@ desktop.ini
 *.swp
 *.swo
 
+
+# 모니터 로그/디버그 스크린샷
+backend/logs/
