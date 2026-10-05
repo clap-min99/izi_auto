@@ -950,9 +950,38 @@ class ReservationMonitor:
     #     self.matcher.check_pending_payments()
     #     self.matcher.handle_first_payment_wins()
 
+def disable_console_quick_edit():
+    """
+    Windows cmd 창의 '빠른 편집 모드' 끄기
+    - 켜져 있으면 창을 클릭하는 순간 '선택' 상태가 되고, 그동안 print()에서 모니터가 멈춤
+    - 이 창(IZI_MONITOR)에만 적용, Windows가 아니거나 실패하면 그냥 넘어감
+    """
+    if os.name != "nt":
+        return
+    try:
+        import ctypes
+        kernel32 = ctypes.windll.kernel32
+        ENABLE_QUICK_EDIT_MODE = 0x0040
+        ENABLE_EXTENDED_FLAGS = 0x0080
+        STD_INPUT_HANDLE = -10
+
+        handle = kernel32.GetStdHandle(STD_INPUT_HANDLE)
+        mode = ctypes.c_uint32()
+        if not kernel32.GetConsoleMode(handle, ctypes.byref(mode)):
+            return  # 콘솔 창이 아님(예: 출력 리다이렉트)
+        new_mode = (mode.value & ~ENABLE_QUICK_EDIT_MODE) | ENABLE_EXTENDED_FLAGS
+        if kernel32.SetConsoleMode(handle, new_mode):
+            print("🖱️ 콘솔 빠른 편집 모드 끔 (창을 클릭해도 모니터가 멈추지 않음)")
+    except Exception as e:
+        print(f"⚠️ 콘솔 빠른 편집 모드 끄기 실패(무시하고 계속): {e}")
+
+
 def main():
     # 콘솔 출력을 날짜별 로그 파일에도 저장
     log_tee.install()
+
+    # 창 클릭 시 모니터가 멈추는 현상 방지
+    disable_console_quick_edit()
 
     # 네이버 예약 관리 페이지 URL
     NAVER_URL = os.getenv('NAVER_RESERVATION_URL', '')
