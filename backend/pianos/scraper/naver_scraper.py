@@ -721,11 +721,44 @@ class NaverPlaceScraper:
 
 
 
+    
     def refresh_page(self):
-        """페이지 새로고침"""
+        """예약 목록 로딩 완료를 확인한 후 새로고침 처리"""
+
+        container_selector = (
+            "[class*='BookingListView__booking-list-table-wrap']"
+        )
+        row_selector = (
+            "[class*='BookingListView__contents-user']"
+        )
+
+        print("🔄 네이버 예약 페이지 새로고침 시작")
+
         self.driver.refresh()
-        time.sleep(2)
-        self.scroll_booking_list_to_bottom() 
+
+        # 1. 예약 목록 컨테이너가 표시될 때까지 대기
+        WebDriverWait(self.driver, 30).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR, container_selector)
+            )
+        )
+
+        print("✅ 예약 목록 컨테이너 로딩 완료")
+
+        # 2. 실제 예약 행이 생성될 때까지 대기
+        WebDriverWait(self.driver, 30).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, row_selector)
+            )
+        )
+
+        print("✅ 예약 데이터 로딩 확인")
+
+        # 3. 목록이 나타난 후 기존 무한 스크롤 수행
+        self.scroll_booking_list_to_bottom()
+
+        print("✅ 예약 목록 새로고침 완료")
+
 
     def close(self):
         """브라우저 종료"""
