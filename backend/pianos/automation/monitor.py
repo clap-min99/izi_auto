@@ -631,23 +631,64 @@ class ReservationMonitor:
                 
                 # 1. 충돌 확인
                 conflict_result = self.conflict_checker.check_and_handle_conflicts(booking)
-                
-                if conflict_result['action'] == 'cancel':
-                    reason = conflict_result['message']  # ✅ 충돌 사유 그대로 사용
-                    # 충돌로 인한 취소
-                    print(f"      ❌ 충돌로 인한 취소: {conflict_result['message']}")
-                    #### 테스트 박수민, 하건수
-                    # DB에는 저장(취소로)만 해두고,
-                    reservation = self.save_booking_to_db(booking, status='취소')
 
-                    if not self.dry_run:
-                        ok = self.scraper.cancel_in_pending_tab(booking['naver_booking_id'], reason=reason)
-                        did_actions |= bool(ok)   # ✅ 취소 성공했으면 조작 발생 True
+                if conflict_result['action'] == 'cancel':
+                    reason = conflict_result['message']
+
+                    print(
+                        f"      🚫 충돌 예약 취소 시도 | "
+                        f"예약자: {reservation.customer_name} | "
+                        f"예약번호: {reservation.naver_booking_id} | 사유: {reason}"
+                    )
+
+                    if self.dry_run:
+                        print("      [DRY_RUN] 네이버 취소/DB 취소/문자 발송 생략")
+                        continue
+
+                    # 1. 네이버 예약 취소 먼저 실행
+                    cancelled = self.scraper.cancel_in_pending_tab(
+                        reservation.naver_booking_id,
+                        reason=reason
+                    )
+
+                    # 2. 네이버 취소 함수가 실패하면 DB와 문자 처리하지 않음
+                    if not cancelled:
+                        print(
+                            f"      ⚠️ 네이버 취소 결과 미확인 → DB/문자 처리 보류 | "
+                            f"예약자: {reservation.customer_name} | "
+                            f"예약번호: {reservation.naver_booking_id}"
+                        )
+                        continue
+
+                    # 3. 네이버 취소 함수가 성공한 경우에만 DB 반영
+                    did_actions = True
+
+                    reservation.reservation_status = '취소'
+                    reservation.save(
+                        update_fields=['reservation_status', 'updated_at']
+                    )
+
+                    # 4. 취소 문자 발송
+                    sms_sent = self.sms_sender.send_cancel_message(
+                        reservation, reason
+                    )
+
+                    if sms_sent:
+                        print(
+                            f"      ✅ 충돌 예약 취소 처리 및 문자 발송 | "
+                            f"예약자: {reservation.customer_name} | "
+                            f"예약번호: {reservation.naver_booking_id}"
+                        )
                     else:
-                        print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
-                    # 취소 문자
-                    self.sms_sender.send_cancel_message(reservation, reason)
+                        print(
+                            f"      ⚠️ 예약 취소 처리 후 문자 미발송 → 확인 필요 | "
+                            f"예약자: {reservation.customer_name} | "
+                            f"예약번호: {reservation.naver_booking_id}"
+                        )
+
                     continue
+
+
                 
                 # 3. 쿠폰/일반 처리 딱 1번만 실행
                 if booking['is_coupon']:
@@ -660,7 +701,11 @@ class ReservationMonitor:
 
                 # 4. (쿠폰 성공 시에만) defer_cancel 처리
                 if booking['is_coupon']:
-                    if success and conflict_result.get('action') == 'defer_cancel_until_coupon_confirmed':
+                    if (
+                        success
+                        and reservation.reservation_status == '확정'
+                        and conflict_result.get('action') == 'defer_cancel_until_coupon_confirmed'
+                    ):
                         for target in conflict_result.get('cancel_targets', []):
                             self.conflict_checker._cancel_reservation(
                                 target,
@@ -733,8 +778,13 @@ class ReservationMonitor:
 
         if not ok:
             print(f"      ❌ 쿠폰 처리 불가 → 취소 ({reason})")
-            self._cancel_coupon_booking(reservation, reason, customer=customer)
-            return True   # ✅ (취소 시도) = 네이버 조작 의도/발생
+            return bool(
+                self._cancel_coupon_booking(
+                    reservation,
+                    reason,
+                    customer=customer
+                )
+            )
 
         print("      ✅ 쿠폰 조건 통과 → 즉시 확정/차감 진행")
         success = self.coupon_manager.confirm_and_deduct(
@@ -762,32 +812,60 @@ class ReservationMonitor:
 
             return True
         
-        print("      ❌ 쿠폰 확정 실패 → 취소")
-        self._cancel_coupon_booking(reservation, "쿠폰 확정 처리 실패")
-        return True      # ✅ 취소 조작 발생
+        # 네이버 확정 실패에는 화면 로딩 지연이나
+        # 클릭 후 응답 실패도 포함될 수 있으므로 자동 취소하지 않음
+        print(
+            f"      ⚠️ 쿠폰 확정 결과 불명확 → 자동 취소 보류, 수동 확인 필요 | "
+            f"예약자: {reservation.customer_name} | "
+            f"예약번호: {reservation.naver_booking_id}"
+        )
+        return False
     
+
     def _cancel_coupon_booking(self, reservation, reason, customer=None):
-        """쿠폰 예약 취소 처리"""
+        """쿠폰 예약 취소 처리 - 네이버 취소 성공 시에만 DB/문자 처리"""
         try:
-            # 네이버 취소
+            # 1. 네이버 예약 취소
             if not self.dry_run:
-                self.scraper.cancel_in_pending_tab(reservation.naver_booking_id, reason=reason)
+                cancelled = self.scraper.cancel_in_pending_tab(
+                    reservation.naver_booking_id,
+                    reason=reason
+                )
+
+                # 취소 실패 시 DB 및 문자 처리 금지
+                if not cancelled:
+                    print(
+                        f"      ⚠️ 네이버 취소 미확인 → "
+                        f"DB/문자 처리 보류, 수동 확인 필요: "
+                        f"{reservation.naver_booking_id}"
+                    )
+                    return False
+
             else:
-                print(f"      [DRY_RUN] 네이버 취소 시뮬레이션")
-            
-            # DB 상태 변경
+                print("      [DRY_RUN] 네이버 취소 시뮬레이션")
+
+            # 2. DB 상태 변경
             reservation.reservation_status = '취소'
-            reservation.save()
-            
-            # 취소 문자
-            self.sms_sender.send_cancel_message(reservation, reason, customer=customer)
-            
-            print(f"      ✅ 쿠폰 예약 취소 완료 ({reason})")
-            
+            reservation.save(
+                update_fields=['reservation_status', 'updated_at']
+            )
+
+            # 3. 취소 문자 발송
+            self.sms_sender.send_cancel_message(
+                reservation,
+                reason,
+                customer=customer
+            )
+
+            print(f"      ✅ 쿠폰 예약 취소 처리 완료 ({reason})")
+            return True
+
         except Exception as e:
             print(f"      ❌ 쿠폰 취소 오류: {e}")
             import traceback
             traceback.print_exc()
+            return False
+
     
     def save_booking_to_db(self, booking, status='신청'):
         reservation, created = Reservation.objects.update_or_create(

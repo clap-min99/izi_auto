@@ -4,7 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import (
+    WebDriverException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+)
 
 from datetime import datetime
 
@@ -468,47 +472,141 @@ class NaverPlaceScraper:
             print(f"⚠️ 예약 행 파싱 에러: {e}")
             return None
 
+    
     def _open_booking_sidebar(self, naver_booking_id):
-        """
-        기본 예약 리스트에서 특정 네이버 예약번호 행을 클릭해서
-        오른쪽 '예약 상세정보' 사이드바를 연다.
-        """
-        self.scroll_booking_list_to_bottom()  # ✅ 추가
-        try:
-            # 예약 행들 로딩될 때까지 기다리기
-            rows = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_all_elements_located(
-                    (By.CSS_SELECTOR, "[class*='BookingListView__contents-user']")
-                )
+        """예약번호로 행을 찾아 상세 사이드바 열기"""
+
+        target_id = str(naver_booking_id).strip()
+        row_sel = "[class*='BookingListView__contents-user']"
+        number_sel = "[class*='BookingListView__book-number']"
+        sidebar_sel = "div.foot-btn-group"
+        close_sel = "[class*='SideFrame__close']"
+
+        max_attempts = 3
+
+        for attempt in range(1, max_attempts + 1):
+            print(
+                f"🔎 예약번호 검색: {target_id} "
+                f"({attempt}/{max_attempts})"
             )
 
-            for row in rows:
-                try:
-                    book_no_el = row.find_element(
-                        By.CSS_SELECTOR,
-                        "[class*='BookingListView__book-number']"
+            try:
+                # 이전 예약 사이드바가 남아 있으면 닫기
+                existing = self.driver.find_elements(
+                    By.CSS_SELECTOR, sidebar_sel
+                )
+
+                if any(el.is_displayed() for el in existing):
+                    close_buttons = self.driver.find_elements(
+                        By.CSS_SELECTOR, close_sel
                     )
-                    raw = (book_no_el.text or "").strip()
 
-                    m = re.search(r"\d+", raw)
-                    row_booking_id = m.group(0) if m else raw
+                    if not close_buttons:
+                        print("❌ 기존 사이드바 닫기 버튼 없음")
+                        return False
 
-                    if row_booking_id == str(naver_booking_id):
-                        # 행 전체 클릭 (체크박스 말고)
-                        self.driver.execute_script("arguments[0].click();", row)
-                        WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.foot-btn-group"))
+                    self.driver.execute_script(
+                        "arguments[0].click();",
+                        close_buttons[0]
+                    )
+
+                    WebDriverWait(self.driver, 10).until(
+                        EC.invisibility_of_element_located(
+                            (By.CSS_SELECTOR, sidebar_sel)
                         )
-                        return True
-                except Exception:
+                    )
+
+                # 전체 예약 목록 로딩
+                self.scroll_booking_list_to_bottom()
+
+                rows = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_all_elements_located(
+                        (By.CSS_SELECTOR, row_sel)
+                    )
+                )
+
+            except Exception as e:
+                print(
+                    f"⚠️ 예약 목록 접근 실패: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+                if attempt < max_attempts:
+                    time.sleep(2)
                     continue
 
-            print(f"⚠️ 사이드바를 열 예약을 찾지 못했습니다: {naver_booking_id}")
-            return False
+                return False
 
-        except Exception as e:
-            print(f"❌ 사이드바 열기 실패: {e}")
-            return False
+            matched_row = None
+            read_failures = 0
+
+            # 예약번호 검색
+            for row in rows:
+                try:
+                    number_el = row.find_element(
+                        By.CSS_SELECTOR, number_sel
+                    )
+
+                    raw = (number_el.text or "").strip()
+
+                    # 변경 배지가 포함되어도 예약번호 추출
+                    numbers = re.findall(r"\d+", raw)
+
+                    if target_id in numbers:
+                        matched_row = row
+                        break
+
+                except (
+                    NoSuchElementException,
+                    StaleElementReferenceException
+                ):
+                    read_failures += 1
+                    continue
+
+            if matched_row is None:
+                print(
+                    f"⚠️ 예약번호 검색 실패: {target_id} | "
+                    f"조회 행 {len(rows)}건 | "
+                    f"번호 읽기 실패 {read_failures}건"
+                )
+
+                if attempt < max_attempts:
+                    print("🔄 예약 목록 재검색")
+                    time.sleep(2)
+                    continue
+
+                print(f"❌ 예약번호 최종 검색 실패: {target_id}")
+                return False
+
+            print(f"✅ 예약번호 일치: {target_id}")
+
+            # 예약번호 검색과 클릭 실패를 별도로 처리
+            try:
+                self.driver.execute_script(
+                    "arguments[0].click();",
+                    matched_row
+                )
+
+                WebDriverWait(self.driver, 12).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, sidebar_sel)
+                    )
+                )
+
+                print(f"✅ 예약 사이드바 열기 성공: {target_id}")
+                return True
+
+            except Exception as e:
+                print(
+                    f"❌ 예약번호는 찾았지만 사이드바 열기 실패: "
+                    f"{target_id} | {type(e).__name__}: {e}"
+                )
+
+                # 클릭 후 상태가 불확실하므로 무조건 재클릭하지 않음
+                return False
+
+        return False
+
 
     def save_to_db(self, bookings):
         """
