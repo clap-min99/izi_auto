@@ -379,7 +379,7 @@ class ReservationMonitor:
 
                 did_actions |= handled
 
-                # ✅ 팝빌 동기화 성공한 사이클에만 미입금 자동 취소
+                # 팝빌 동기화 성공 시에만 기한 초과 취소 검사
                 if bank_sync_ok_this_cycle:
                     did_actions |= self.cancel_expired_pending_deposits(
                         bank_sync_ok=True
@@ -389,15 +389,6 @@ class ReservationMonitor:
                     self.scraper.refresh_page()
                     time.sleep(2)
                     self.scraper.scroll_booking_list_to_bottom()
-                    continue
-
-                did_actions |= self.cancel_expired_pending_deposits()
-                
-                if handled :
-                    self.scraper.refresh_page()
-                    time.sleep(2)
-                    self.scraper.scroll_booking_list_to_bottom()
-                    # 이 사이클에서는 추가 입금/확정 로직 금지
                     continue
                 
                 # ---- (C) ✅ 조작이 있었으면 fresh scrape로 동기화 + previous 갱신 ----
@@ -756,7 +747,23 @@ class ReservationMonitor:
                 # 1. 충돌 확인
                 conflict_result = self.conflict_checker.check_and_handle_conflicts(booking)
 
+                # 확정 예약이나 입금 고객과 충돌하면 자동 처리 중단
+                if conflict_result.get('action') == 'hold':
+                    print(
+                        f"      ⚠️ 예약 충돌 처리 보류 | "
+                        f"{reservation.customer_name} | "
+                        f"{reservation.naver_booking_id} | "
+                        f"{conflict_result.get('message', '')}"
+                    )
+                    continue
+
                 if conflict_result['action'] == 'cancel':
+                    if self.conflict_checker._has_payment_evidence(reservation):
+                        print(
+                            f"      🛡️ 입금 흔적 발견 → 충돌 취소 보류: "
+                            f"{reservation.naver_booking_id}"
+                        )
+                        continue
                     reason = conflict_result['message']
 
                     print(
@@ -833,7 +840,7 @@ class ReservationMonitor:
                         for target in conflict_result.get('cancel_targets', []):
                             self.conflict_checker._cancel_reservation(
                                 target,
-                                reason="쿠폰 예약과 시간대 충돌"
+                                reason="동일 시간대 예약 충돌"
                             )
                     
             except Exception as e:
@@ -870,7 +877,82 @@ class ReservationMonitor:
             import traceback
             traceback.print_exc()
             return False
-    
+    def notify_owner_coupon_confirmation_issue(self, reservation):
+        """
+        쿠폰 예약 확정 결과를 확인하지 못했을 때
+        사장님에게 경고 문자 발송 (중복 발송 방지)
+        """
+        # DRY_RUN에서는 실제 문자 발송하지 않음
+        if self.dry_run:
+            print("   [DRY_RUN] 쿠폰 확정 오류 문자 발송 생략")
+            return False
+
+        try:
+            # DB에서 최신 알림 상태 확인
+            reservation.refresh_from_db(
+                fields=["coupon_confirm_alert_status"]
+            )
+
+            # 이미 발송한 예약이면 중복 발송 금지
+            if reservation.coupon_confirm_alert_status == "전송완료":
+                print("   ℹ️ 사장님 경고 문자 이미 발송됨 → 중복 발송 방지")
+                return True
+
+            # 사장님 전화번호
+            owner_phone = getattr(settings, "OWNER_PHONE", "").strip()
+
+            if not owner_phone:
+                print("   ⚠️ OWNER_PHONE 미설정 → 사장님 문자 발송 불가")
+                return False
+
+            # 문자 내용
+            content = (
+                "[이지피아노 자동화 확인 요청]\n"
+                "쿠폰 예약 확정 결과를 확인할 수 없습니다.\n\n"
+                f"예약자: {reservation.customer_name}\n"
+                f"예약번호: {reservation.naver_booking_id}\n"
+                f"예약실: {reservation.room_name}\n"
+                f"예약일시: {self._fmt_dt(reservation)}\n\n"
+                "네이버 예약 확정 여부와 쿠폰 차감 이력을 "
+                "직접 확인해 주세요.\n"
+                "자동 재확정 및 자동 취소는 진행하지 않았습니다."
+            )
+
+            # 기존 문자 발송 기능 사용
+            sent = self.sms_sender.send_plain_message(
+                to=owner_phone,
+                content=content,
+                msg_type="쿠폰 확정 결과 확인 요청"
+            )
+
+            # 알림 상태 저장
+            reservation.coupon_confirm_alert_status = (
+                "전송완료" if sent else "전송실패"
+            )
+
+            reservation.save(
+                update_fields=[
+                    "coupon_confirm_alert_status",
+                    "updated_at",
+                ]
+            )
+
+            if sent:
+                print(
+                    f"   ✅ 사장님 쿠폰 확정 오류 문자 발송 접수: "
+                    f"{reservation.naver_booking_id}"
+                )
+            else:
+                print(
+                    f"   ❌ 사장님 쿠폰 확정 오류 문자 발송 실패: "
+                    f"{reservation.naver_booking_id}"
+                )
+
+            return bool(sent)
+
+        except Exception as e:
+            print(f"   ❌ 쿠폰 오류 문자 처리 중 예외: {e}")
+            return False
     def handle_coupon_booking(self, reservation, booking):
         """
         쿠폰 예약 처리 (쿠폰 로직은 CouponManager로 통일)
@@ -943,6 +1025,9 @@ class ReservationMonitor:
             f"예약자: {reservation.customer_name} | "
             f"예약번호: {reservation.naver_booking_id}"
         )
+        
+        # ✅ 이 경우에만 사장님에게 경고 문자 발송
+        self.notify_owner_coupon_confirmation_issue(reservation)
         return False
     
 

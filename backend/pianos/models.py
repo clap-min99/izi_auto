@@ -273,7 +273,17 @@ class Reservation(models.Model):
     extra_people_qty = models.PositiveIntegerField(default=0, verbose_name="인원추가수량")
     is_proxy = models.BooleanField(default=False, verbose_name="대리예약여부")
     normalized_customer_name = models.CharField(max_length=120, blank=True, db_index=True)
-
+    # 쿠폰 확정 실패 시 사장님 알림 상태
+    coupon_confirm_alert_status = models.CharField(
+        max_length=20,
+        default="전송전",
+        choices=[
+            ("전송전", "전송전"),
+            ("전송완료", "전송완료"),
+            ("전송실패", "전송실패"),
+        ],
+        verbose_name="쿠폰 확정 오류 사장님 알림",
+    )
 
     # 문자 발송 상태
     account_sms_status = models.CharField(

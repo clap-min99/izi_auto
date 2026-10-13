@@ -77,48 +77,48 @@ class PaymentConflictSafetyTests(TestCase):
         self.matcher._cancel_loser.assert_not_called()
 
 
-@patch("pianos.automation.payment_matcher.Reservation")
-def test_general_matching_does_not_bypass_conflict(
-    self, reservation_model
-):
-    """충돌 예약을 일반 입금 매칭으로 우회 확정하지 않음."""
-    from contextlib import nullcontext
-
-    self.matcher.dry_run = False
-    self.matcher.scraper = MagicMock()
-    self.matcher.sms_sender = MagicMock()
-    self.matcher.scraper.confirm_in_pending_tab.return_value = True
-
-    res = MagicMock()
-    res.pk = 10
-    res.room_name = "테스트방"
-    res.reservation_date = timezone.localdate()
-    res.start_time = "10:00"
-    res.end_time = "11:00"
-    res.naver_booking_id = "TEST-MATCH"
-    res.customer_name = "일반예약자"
-
-    reservation_model.objects.filter.return_value \
-        .exclude.return_value.exists.return_value = True
-
-    # 실 DB 트랜잭션 및 안전모드 영향을 제거
-    with (
-        patch(
-            "pianos.automation.payment_matcher.is_allowed_customer",
-            return_value=True
-        ),
-        patch(
-            "pianos.automation.payment_matcher.transaction.atomic",
-            side_effect=lambda: nullcontext()
-        )
+    @patch("pianos.automation.payment_matcher.Reservation")
+    def test_general_matching_does_not_bypass_conflict(
+        self, reservation_model
     ):
-        result = PaymentMatcher._confirm_reservations(
-            self.matcher, [res], []
-        )
+        """충돌 예약을 일반 입금 매칭으로 우회 확정하지 않음."""
+        from contextlib import nullcontext
 
-    self.assertEqual(result, 0)
-    reservation_model.objects.filter.assert_called_once()
-    self.matcher.scraper.confirm_in_pending_tab.assert_not_called()
+        self.matcher.dry_run = False
+        self.matcher.scraper = MagicMock()
+        self.matcher.sms_sender = MagicMock()
+        self.matcher.scraper.confirm_in_pending_tab.return_value = True
+
+        res = MagicMock()
+        res.pk = 10
+        res.room_name = "테스트방"
+        res.reservation_date = timezone.localdate()
+        res.start_time = "10:00"
+        res.end_time = "11:00"
+        res.naver_booking_id = "TEST-MATCH"
+        res.customer_name = "일반예약자"
+
+        reservation_model.objects.filter.return_value \
+            .exclude.return_value.exists.return_value = True
+
+        # 실 DB 트랜잭션 및 안전모드 영향을 제거
+        with (
+            patch(
+                "pianos.automation.payment_matcher.is_allowed_customer",
+                return_value=True
+            ),
+            patch(
+                "pianos.automation.payment_matcher.transaction.atomic",
+                side_effect=lambda: nullcontext()
+            )
+        ):
+            result = PaymentMatcher._confirm_reservations(
+                self.matcher, [res], []
+            )
+
+        self.assertEqual(result, 0)
+        reservation_model.objects.filter.assert_called_once()
+        self.matcher.scraper.confirm_in_pending_tab.assert_not_called()
 
 
 
