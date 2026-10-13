@@ -1,0 +1,248 @@
+
+"""실제 네이버/팝빌/문자/운영 DB를 사용하지 않는 안전성 테스트."""
+
+from datetime import timedelta
+from types import SimpleNamespace
+from unittest import TestCase
+from unittest.mock import MagicMock, patch
+
+from django.utils import timezone
+
+from pianos.automation.monitor import ReservationMonitor
+from pianos.automation.payment_matcher import PaymentMatcher
+
+
+class PaymentConflictSafetyTests(TestCase):
+
+    def setUp(self):
+        # __init__ 우회: Selenium 브라우저 실행 방지
+        self.matcher = PaymentMatcher.__new__(PaymentMatcher)
+
+        self.matcher._get_earliest_payment = MagicMock()
+        self.matcher._confirm_reservations = MagicMock()
+        self.matcher._cancel_loser = MagicMock(return_value=True)
+
+        self.winner = MagicMock()
+        self.winner.id = 1
+        self.winner.customer_name = "선입금자"
+        self.winner.naver_booking_id = "TEST-WINNER"
+        self.winner.reservation_status = "확정"
+
+        self.loser = MagicMock()
+        self.loser.id = 2
+        self.loser.customer_name = "후순위예약자"
+        self.loser.naver_booking_id = "TEST-LOSER"
+
+        self.tx = SimpleNamespace(
+            transaction_date=timezone.localdate(),
+            transaction_time=timezone.localtime().time(),
+        )
+
+        self.matcher._get_earliest_payment.side_effect = [
+            self.tx, None
+        ]
+
+        self.group = {
+            "room_name": "테스트방",
+            "time_range": ("10:00", "11:00"),
+            "reservations": [self.winner, self.loser],
+        }
+
+    def test_winner_confirmation_failure_never_cancels_loser(self):
+        """선입금자 확정 실패 → 다른 예약 취소 금지."""
+        self.matcher._confirm_reservations.return_value = 0
+
+        result = self.matcher._process_conflicting_group(self.group)
+
+        self.assertFalse(result)
+        self.matcher._cancel_loser.assert_not_called()
+
+    def test_winner_confirmation_success_allows_loser_cancellation(self):
+        """선입금자 확정 성공 → 후순위 예약 취소 호출."""
+        self.matcher._confirm_reservations.return_value = 1
+
+        result = self.matcher._process_conflicting_group(self.group)
+
+        self.assertTrue(result)
+        self.matcher._cancel_loser.assert_called_once()
+
+    def test_winner_db_state_not_confirmed_never_cancels_loser(self):
+        """확정 함수 성공 반환 후에도 DB가 신청이면 취소 금지."""
+        self.matcher._confirm_reservations.return_value = 1
+        self.winner.reservation_status = "신청"
+
+        result = self.matcher._process_conflicting_group(self.group)
+
+        self.assertFalse(result)
+        self.matcher._cancel_loser.assert_not_called()
+
+
+@patch("pianos.automation.payment_matcher.Reservation")
+def test_general_matching_does_not_bypass_conflict(
+    self, reservation_model
+):
+    """충돌 예약을 일반 입금 매칭으로 우회 확정하지 않음."""
+    from contextlib import nullcontext
+
+    self.matcher.dry_run = False
+    self.matcher.scraper = MagicMock()
+    self.matcher.sms_sender = MagicMock()
+    self.matcher.scraper.confirm_in_pending_tab.return_value = True
+
+    res = MagicMock()
+    res.pk = 10
+    res.room_name = "테스트방"
+    res.reservation_date = timezone.localdate()
+    res.start_time = "10:00"
+    res.end_time = "11:00"
+    res.naver_booking_id = "TEST-MATCH"
+    res.customer_name = "일반예약자"
+
+    reservation_model.objects.filter.return_value \
+        .exclude.return_value.exists.return_value = True
+
+    # 실 DB 트랜잭션 및 안전모드 영향을 제거
+    with (
+        patch(
+            "pianos.automation.payment_matcher.is_allowed_customer",
+            return_value=True
+        ),
+        patch(
+            "pianos.automation.payment_matcher.transaction.atomic",
+            side_effect=lambda: nullcontext()
+        )
+    ):
+        result = PaymentMatcher._confirm_reservations(
+            self.matcher, [res], []
+        )
+
+    self.assertEqual(result, 0)
+    reservation_model.objects.filter.assert_called_once()
+    self.matcher.scraper.confirm_in_pending_tab.assert_not_called()
+
+
+
+class TimeoutCancellationSafetyTests(TestCase):
+
+    def setUp(self):
+        # __init__ 우회: 실제 서비스 연결 방지
+        self.monitor = ReservationMonitor.__new__(
+            ReservationMonitor
+        )
+
+        self.monitor.dry_run = False
+        self.monitor.scraper = MagicMock()
+        self.monitor.sms_sender = MagicMock()
+
+        self.reservation = MagicMock()
+        self.reservation.naver_booking_id = "TEST-TIMEOUT"
+        self.reservation.customer_name = "홍길동"
+        self.reservation.reservation_status = "신청"
+        self.reservation.is_coupon = False
+        self.reservation.account_sms_status = "전송완료"
+        self.reservation.created_at = (
+            timezone.now() - timedelta(minutes=60)
+        )
+
+    def _reservation_queryset(self, reservation_model):
+        qs = MagicMock()
+        qs.exists.return_value = True
+        qs.count.return_value = 1
+        qs.__iter__.return_value = iter([self.reservation])
+
+        reservation_model.objects.filter.return_value \
+            .order_by.return_value = qs
+
+    @patch("pianos.automation.monitor.Reservation")
+    def test_bank_sync_failure_skips_cancellation(
+        self, reservation_model
+    ):
+        """팝빌 동기화 실패 → 취소 시도 자체 금지."""
+        result = self.monitor.cancel_expired_pending_deposits(
+            bank_sync_ok=False
+        )
+
+        self.assertFalse(result)
+        reservation_model.objects.filter.assert_not_called()
+        self.monitor.scraper.cancel_in_pending_tab.assert_not_called()
+
+    @patch("pianos.models.AccountTransaction")
+    @patch("pianos.automation.monitor.Reservation")
+    def test_linked_payment_skips_cancellation(
+        self, reservation_model, transaction_model
+    ):
+        """예약에 연결된 입금이 있으면 취소 금지."""
+        self._reservation_queryset(reservation_model)
+
+        transaction_model.objects.filter.return_value \
+            .exists.return_value = True
+
+        result = self.monitor.cancel_expired_pending_deposits(
+            bank_sync_ok=True
+        )
+
+        self.assertFalse(result)
+        self.monitor.scraper.cancel_in_pending_tab.assert_not_called()
+        self.reservation.save.assert_not_called()
+        self.monitor.sms_sender.send_cancel_message.assert_not_called()
+
+    @patch("pianos.models.AccountTransaction")
+    @patch("pianos.automation.monitor.Reservation")
+    def test_unlinked_payment_skips_cancellation(
+        self, reservation_model, transaction_model
+    ):
+        """미매칭 입금 후보가 있으면 취소 금지."""
+        self._reservation_queryset(reservation_model)
+
+        linked = MagicMock()
+        linked.exists.return_value = False
+
+        candidates = MagicMock()
+        candidates.only.return_value = [
+            SimpleNamespace(
+                depositor_name="홍길동",
+                amount=15000
+            )
+        ]
+
+        transaction_model.objects.filter.side_effect = [
+            linked, candidates
+        ]
+
+        result = self.monitor.cancel_expired_pending_deposits(
+            bank_sync_ok=True
+        )
+
+        self.assertFalse(result)
+        self.monitor.scraper.cancel_in_pending_tab.assert_not_called()
+        self.reservation.save.assert_not_called()
+        self.monitor.sms_sender.send_cancel_message.assert_not_called()
+
+    @patch("pianos.models.AccountTransaction")
+    @patch("pianos.automation.monitor.Reservation")
+    def test_naver_cancel_failure_keeps_db_unchanged(
+        self, reservation_model, transaction_model
+    ):
+        """네이버 취소 실패 → DB 변경 및 문자 발송 금지."""
+        self._reservation_queryset(reservation_model)
+
+        linked = MagicMock()
+        linked.exists.return_value = False
+
+        candidates = MagicMock()
+        candidates.only.return_value = []
+
+        transaction_model.objects.filter.side_effect = [
+            linked, candidates
+        ]
+
+        self.monitor.scraper.cancel_in_pending_tab.return_value = False
+
+        result = self.monitor.cancel_expired_pending_deposits(
+            bank_sync_ok=True
+        )
+
+        self.assertFalse(result)
+        self.monitor.scraper.cancel_in_pending_tab.assert_called_once()
+        self.reservation.save.assert_not_called()
+        self.monitor.sms_sender.send_cancel_message.assert_not_called()

@@ -301,6 +301,7 @@ class ReservationMonitor:
 
                 # ✅ [여기] 30분 경과 입금대기 자동취소
                 did_actions = False
+                bank_sync_ok_this_cycle = False
                 # did_actions |= self.cancel_expired_pending_deposits()
                 
                 # ★ 1. 5분마다 계좌 내역 동기화
@@ -312,6 +313,7 @@ class ReservationMonitor:
 
                     if ok:  
                         self.last_account_sync = current_time
+                        bank_sync_ok_this_cycle = True
                     else:
                         self.last_account_sync = current_time - (self.account_sync_interval - timedelta(seconds=60))
                         print("   🔁 계좌 동기화 실패 → 60초 후 재시도")
@@ -376,6 +378,18 @@ class ReservationMonitor:
                     self._silent_payment_check()
 
                 did_actions |= handled
+
+                # ✅ 팝빌 동기화 성공한 사이클에만 미입금 자동 취소
+                if bank_sync_ok_this_cycle:
+                    did_actions |= self.cancel_expired_pending_deposits(
+                        bank_sync_ok=True
+                    )
+
+                if handled:
+                    self.scraper.refresh_page()
+                    time.sleep(2)
+                    self.scraper.scroll_booking_list_to_bottom()
+                    continue
 
                 did_actions |= self.cancel_expired_pending_deposits()
                 
@@ -457,65 +471,175 @@ class ReservationMonitor:
         self.scraper.close()
         print("\n🔚 시스템 종료")
 
-    def cancel_expired_pending_deposits(self):
+
+    def cancel_expired_pending_deposits(self, bank_sync_ok=False):
         """
-        created_at 기준 40분 동안 입금이 확인되지 않은 '입금대기' 예약 자동 취소
-        - 대상: 일반예약(쿠폰 X) + 신청 + 계좌안내 문자 전송완료
-        - 네이버 화면 범위(오늘~한달) 안의 예약일만 취소 시도
+        팝빌 동기화 성공 후, 입금 기록이 없는 40분 경과
+        일반 예약만 자동 취소한다.
         """
+        from pianos.models import AccountTransaction, name_matches
+
+        # 1. 팝빌 동기화 실패 시 취소 금지
+        if not bank_sync_ok:
+            print("   ⚠️ 팝빌 동기화 미확인 → 미입금 자동 취소 보류")
+            return False
+
         now = timezone.now()
-        # 입금 대기 시간 조정 현재 30분
         cutoff = now - timedelta(minutes=40)
 
         today = timezone.localdate()
-        end_date = today + timedelta(days=30)  # 네이버 필터와 동일하게
+        end_date = today + timedelta(days=30)
 
         qs = Reservation.objects.filter(
-            reservation_status="신청",
+            reservation_status='신청',
             is_coupon=False,
-            account_sms_status="전송완료",
+            account_sms_status='전송완료',
             created_at__lte=cutoff,
             reservation_date__gte=today,
             reservation_date__lte=end_date,
-        ).order_by("created_at")
+        ).order_by('created_at')
 
         if not qs.exists():
             return False
 
-        print(f"⏰ 30분 경과 입금대기 자동취소 대상: {qs.count()}건")
+        print(f"⏰ 40분 경과 미입금 예약 검토: {qs.count()}건")
+
         did_actions = False
 
         for r in qs:
-            reason = "입금 기한(30분) 초과로 자동 취소되었습니다."
+            try:
+                # 2. 최신 예약 상태 다시 확인
+                r.refresh_from_db()
 
-            # 1) 네이버 취소(실제 실행)
-            if not self.dry_run:
-                ok = self.scraper.cancel_in_pending_tab(r.naver_booking_id, reason=reason)
-                if not ok:
-                    print(f"   ⚠️ 네이버 취소 실패: {r.naver_booking_id} ({r.customer_name})")
+                if (
+                    r.reservation_status != '신청'
+                    or r.is_coupon
+                    or r.account_sms_status != '전송완료'
+                ):
                     continue
-            else:
-                print(f"   [DRY_RUN] 네이버 취소 시뮬레이션: {r.naver_booking_id} ({r.customer_name})")
 
-            # 이번 사이클에 '화면 조작이 있었다' 표시
-            did_actions = True
+                # 3. 해당 예약에 연결된 입금 기록 확인
+                linked_payment = AccountTransaction.objects.filter(
+                    matched_reservations=r,
+                    transaction_type='입금',
+                ).exists()
 
-            # 2) DB 취소 반영
-            r.reservation_status = "취소"
-            # cancel_reason 같은 필드가 있으면 같이 저장 (필드명 다르면 이 부분만 맞춰)
-            if hasattr(r, "cancel_reason"):
-                r.cancel_reason = reason
-            r.save(update_fields=["reservation_status", "updated_at"] + (["cancel_reason"] if hasattr(r, "cancel_reason") else []))
+                if linked_payment:
+                    print(
+                        f"   🛡️ 연결된 입금 존재 → 취소 보류 | "
+                        f"{r.customer_name} | {r.naver_booking_id}"
+                    )
+                    continue
 
-            # 3) 취소 문자 1회 발송
-            self.sms_sender.send_cancel_message(r, reason)
+                # 4. 아직 연결되지 않은 입금도 확인
+                # 분할 입금 보호를 위해 금액은 제한하지 않음
+                candidates = AccountTransaction.objects.filter(
+                    transaction_type='입금',
+                    transaction_date__gte=timezone.localtime(
+                        r.created_at
+                    ).date(),
+                ).only(
+                    'depositor_name',
+                    'amount',
+                    'transaction_id',
+                )
 
-            # (선택) cancel_sms_status 같은 게 있으면 찍기
-            if hasattr(r, "cancel_sms_status"):
-                r.cancel_sms_status = "전송완료"
-                r.save(update_fields=["cancel_sms_status", "updated_at"])
+                matched_deposit = next(
+                    (
+                        t for t in candidates
+                        if name_matches(
+                            r.customer_name,
+                            t.depositor_name
+                        )
+                    ),
+                    None
+                )
+
+                if matched_deposit is not None:
+                    print(
+                        f"   🛡️ 입금 후보 발견 → 취소 보류 | "
+                        f"{r.customer_name} | {r.naver_booking_id} | "
+                        f"{matched_deposit.amount:,}원"
+                    )
+                    continue
+
+                # 5. DRY_RUN: 실제 네이버/DB/문자 변경 없음
+                if self.dry_run:
+                    print(
+                        f"   [DRY_RUN] 미입금 취소 대상 | "
+                        f"{r.customer_name} | {r.naver_booking_id}"
+                    )
+                    continue
+
+                # 6. 실제 네이버 취소 시도
+                reason = "입금 기한(30분) 초과로 자동 취소되었습니다."
+
+                print(
+                    f"   🚫 미입금 자동 취소 시도 | "
+                    f"{r.customer_name} | {r.naver_booking_id}"
+                )
+
+                cancelled = self.scraper.cancel_in_pending_tab(
+                    r.naver_booking_id,
+                    reason=reason
+                )
+
+                # 네이버 취소 실패 시 DB/문자 변경 금지
+                if not cancelled:
+                    print(
+                        f"   ⚠️ 네이버 취소 실패/미확인 → "
+                        f"DB 및 문자 처리 보류 | "
+                        f"{r.naver_booking_id}"
+                    )
+                    continue
+
+                # 7. 네이버 취소 함수 성공 반환 후 DB 반영
+                did_actions = True
+
+                r.reservation_status = '취소'
+                r.save(
+                    update_fields=[
+                        'reservation_status',
+                        'updated_at'
+                    ]
+                )
+
+                # 8. 취소 문자 발송
+                sms_sent = self.sms_sender.send_cancel_message(
+                    r, reason
+                )
+
+                if hasattr(r, 'cancel_sms_status'):
+                    r.cancel_sms_status = (
+                        '전송완료' if sms_sent else '전송실패'
+                    )
+                    r.save(
+                        update_fields=[
+                            'cancel_sms_status',
+                            'updated_at'
+                        ]
+                    )
+
+                if sms_sent:
+                    print(
+                        f"   ✅ 미입금 예약 취소 및 문자 발송 접수 | "
+                        f"{r.customer_name} | {r.naver_booking_id}"
+                    )
+                else:
+                    print(
+                        f"   ⚠️ 예약 취소 후 문자 발송 실패 | "
+                        f"{r.customer_name} | {r.naver_booking_id}"
+                    )
+
+            except Exception as e:
+                print(
+                    f"   ❌ 자동 취소 처리 오류 → 수동 확인 필요 | "
+                    f"{r.customer_name} | {r.naver_booking_id} | "
+                    f"{type(e).__name__}: {e}"
+                )
 
         return did_actions
+
     
     def _silent_payment_check(self):
         """
