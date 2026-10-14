@@ -10,6 +10,140 @@ from django.utils import timezone
 
 from pianos.automation.monitor import ReservationMonitor
 from pianos.automation.payment_matcher import PaymentMatcher
+from pianos.automation.conflict_checker import ConflictChecker
+
+
+class SplitPaymentTests(TestCase):
+    @patch('pianos.automation.payment_matcher.AccountTransaction')
+    def test_multiple_reservations_confirm_from_split_payments(self, model):
+        matcher = PaymentMatcher.__new__(PaymentMatcher)
+        matcher._confirm_reservations = MagicMock(return_value=2)
+        reservations = [
+            SimpleNamespace(price=15000, created_at=timezone.now(),
+                            room_name='A', reservation_date='2026-10-14',
+                            start_time='10:00', end_time='11:00'),
+            SimpleNamespace(price=25000, created_at=timezone.now(),
+                            room_name='A', reservation_date='2026-10-14',
+                            start_time='11:00', end_time='12:00'),
+        ]
+        deposits = [
+            SimpleNamespace(depositor_name='홍길동', amount=10000,
+                            transaction_date='2026-10-14', transaction_time='09:00'),
+            SimpleNamespace(depositor_name='홍길동', amount=30000,
+                            transaction_date='2026-10-14', transaction_time='09:01'),
+            SimpleNamespace(depositor_name='다른사람', amount=40000,
+                            transaction_date='2026-10-14', transaction_time='09:02'),
+        ]
+        # 총액 단일 입금은 없고, 서로 다른 금액의 입금 합계가 예약 총액과 일치.
+        model.objects.filter.return_value.order_by.side_effect = [[], deposits]
+        result = matcher.try_match_customer({
+            'name': '홍길동', 'total_amount': 40000,
+            'reservations': reservations,
+        })
+        self.assertEqual(result, 2)
+        matcher._confirm_reservations.assert_called_once_with(
+            reservations, deposits[:2]
+        )
+
+
+class CouponPriorityTests(TestCase):
+    def setUp(self):
+        self.checker = ConflictChecker.__new__(ConflictChecker)
+        self.checker.dry_run = False
+        self.checker.scraper = MagicMock()
+        self.checker.sms_sender = MagicMock()
+
+    def test_coupon_precedes_pending_and_confirmed_general(self):
+        targets = [SimpleNamespace(is_coupon=False, reservation_status=status)
+                   for status in ('신청', '확정')]
+        result = self.checker._handle_coupon_conflict({}, targets)
+        self.assertEqual(result['action'], 'defer_cancel_until_coupon_confirmed')
+        self.assertEqual(result['cancel_targets'], targets)
+        self.checker.scraper.cancel_in_pending_tab.assert_not_called()
+
+    def test_coupon_collision_is_held(self):
+        result = self.checker._handle_coupon_conflict(
+            {}, [SimpleNamespace(is_coupon=True, reservation_status='확정')]
+        )
+        self.assertEqual(result['action'], 'hold')
+
+    @patch('pianos.automation.conflict_checker.is_allowed_customer', return_value=True)
+    @patch('pianos.automation.conflict_checker.Reservation')
+    @patch('pianos.automation.conflict_checker.transaction.atomic')
+    def test_confirmed_general_cancel_requires_naver_success(self, atomic, model, allowed):
+        from contextlib import nullcontext
+        atomic.side_effect = lambda: nullcontext()
+        res = MagicMock(is_coupon=False, reservation_status='확정')
+        model.objects.select_for_update.return_value.get.return_value = res
+        self.checker._mark_transaction_as_cancelled = MagicMock()
+        self.checker.scraper.cancel_in_pending_tab.return_value = False
+        self.assertFalse(self.checker._cancel_reservation(res, '쿠폰 충돌'))
+        res.save.assert_not_called()
+        self.checker._mark_transaction_as_cancelled.assert_not_called()
+        self.checker.sms_sender.send_cancel_message.assert_not_called()
+        self.checker.scraper.cancel_in_pending_tab.return_value = True
+        self.assertTrue(self.checker._cancel_reservation(res, '쿠폰 충돌'))
+        self.assertEqual(res.reservation_status, '취소')
+        self.checker._mark_transaction_as_cancelled.assert_called_once_with(res)
+
+    @patch('pianos.automation.payment_matcher.Reservation')
+    def test_first_payment_winner_cannot_bypass_coupon(self, model):
+        matcher = PaymentMatcher.__new__(PaymentMatcher)
+        matcher.scraper = MagicMock()
+        overlaps = model.objects.filter.return_value.exclude.return_value
+        overlaps.filter.return_value.exists.return_value = True
+        self.assertEqual(matcher._confirm_reservations(
+            [MagicMock()], [], conflict_winner=True
+        ), 0)
+        overlaps.filter.assert_called_once_with(is_coupon=True)
+        matcher.scraper.confirm_in_pending_tab.assert_not_called()
+
+    @patch('pianos.automation.monitor.is_allowed_customer', return_value=True)
+    def test_general_cancel_runs_only_after_coupon_confirmation(self, allowed):
+        for confirmed in (False, True):
+            with self.subTest(confirmed=confirmed):
+                monitor = ReservationMonitor.__new__(ReservationMonitor)
+                monitor.dry_run = False
+                monitor.conflict_checker = MagicMock()
+                target = MagicMock()
+                monitor.conflict_checker.check_and_handle_conflicts.return_value = {
+                    'action': 'defer_cancel_until_coupon_confirmed',
+                    'cancel_targets': [target],
+                }
+                monitor.conflict_checker._cancel_reservation.return_value = False
+                res = MagicMock(reservation_status='신청')
+                monitor.save_booking_to_db = MagicMock(return_value=res)
+                monitor.send_owner_request_notification_if_needed = MagicMock()
+                def confirm(*args):
+                    res.reservation_status = '확정' if confirmed else '신청'
+                    return confirmed
+                monitor.handle_coupon_booking = MagicMock(side_effect=confirm)
+                booking = dict(
+                    reservation_status='신청', customer_name='테스트',
+                    naver_booking_id='COUPON', room_name='테스트방',
+                    reservation_date='2026-10-14', start_time='10:00',
+                    end_time='11:00', price=10000, is_coupon=True,
+                )
+                monitor.handle_new_bookings([booking])
+                if confirmed:
+                    monitor.conflict_checker._cancel_reservation.assert_called_once()
+                    monitor.conflict_checker.notify_owner_conflict.assert_called_once()
+                else:
+                    monitor.conflict_checker._cancel_reservation.assert_not_called()
+
+    @patch('pianos.automation.conflict_checker.AccountTransaction')
+    def test_cancelled_payment_is_preserved_for_refund_review(self, model):
+        res = MagicMock(created_at=timezone.now(), naver_booking_id='GENERAL')
+        trans = MagicMock(pk=1, memo='original', match_status='확정완료')
+        model.objects.filter.side_effect = [[trans], []]
+        self.checker.notify_owner_conflict = MagicMock()
+        self.checker._mark_transaction_as_cancelled(res)
+        self.assertEqual(trans.match_status, '취소')
+        self.assertIn('original', trans.memo)
+        self.assertIn('[환불 확인 필요] 예약 GENERAL', trans.memo)
+        trans.delete.assert_not_called()
+        trans.matched_reservations.add.assert_called_once_with(res)
+        self.checker.notify_owner_conflict.assert_called_once()
 
 
 class PaymentConflictSafetyTests(TestCase):

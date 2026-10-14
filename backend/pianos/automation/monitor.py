@@ -246,8 +246,18 @@ class ReservationMonitor:
         
         # 메인 루프
         cycle_count = 0
+        stop_request = os.path.join(
+            os.path.dirname(BASE_DIR), '.runtime', f'stop-monitor-{os.getpid()}'
+        )
+        stop_requested = False
         while True:
             try:
+                # Finish the previous booking cycle before honoring shutdown.
+                if os.path.isfile(stop_request):
+                    stop_requested = True
+                    os.remove(stop_request)
+                    print('IZI AUTO stop requested: current cycle completed')
+                    break
                 # ✅ 자동화 OFF면 아무 것도 하지 않고 대기
                 ctrl = AutomationControl.objects.filter(id=1).first()
                 if not ctrl or not ctrl.enabled:
@@ -459,7 +469,11 @@ class ReservationMonitor:
                 print("\n⏰ 10초 후 재시도...")
                 time.sleep(10)
         
-        self.scraper.close()
+        if stop_requested:
+            # Disconnect ChromeDriver without closing the attached Chrome browser.
+            self.scraper.driver.service.stop()
+        else:
+            self.scraper.close()
         print("\n🔚 시스템 종료")
 
 
@@ -758,69 +772,17 @@ class ReservationMonitor:
                     continue
 
                 if conflict_result['action'] == 'cancel':
-                    if self.conflict_checker._has_payment_evidence(reservation):
-                        print(
-                            f"      🛡️ 입금 흔적 발견 → 충돌 취소 보류: "
-                            f"{reservation.naver_booking_id}"
-                        )
-                        continue
-                    reason = conflict_result['message']
-
-                    print(
-                        f"      🚫 충돌 예약 취소 시도 | "
-                        f"예약자: {reservation.customer_name} | "
-                        f"예약번호: {reservation.naver_booking_id} | 사유: {reason}"
+                    cancelled = self.conflict_checker._cancel_reservation(
+                        reservation, reason=conflict_result['message']
                     )
-
-                    if self.dry_run:
-                        print("      [DRY_RUN] 네이버 취소/DB 취소/문자 발송 생략")
-                        continue
-
-                    # 1. 네이버 예약 취소 먼저 실행
-                    cancelled = self.scraper.cancel_in_pending_tab(
-                        reservation.naver_booking_id,
-                        reason=reason
-                    )
-
-                    # 2. 네이버 취소 함수가 실패하면 DB와 문자 처리하지 않음
-                    if not cancelled:
-                        print(
-                            f"      ⚠️ 네이버 취소 결과 미확인 → DB/문자 처리 보류 | "
-                            f"예약자: {reservation.customer_name} | "
-                            f"예약번호: {reservation.naver_booking_id}"
+                    did_actions |= bool(cancelled)
+                    if not cancelled and not self.dry_run:
+                        self.conflict_checker.notify_owner_conflict(
+                            f'쿠폰 충돌 일반 예약 취소 실패: 수동 확인 필요 | '
+                            f'예약 {reservation.naver_booking_id}'
                         )
-                        continue
-
-                    # 3. 네이버 취소 함수가 성공한 경우에만 DB 반영
-                    did_actions = True
-
-                    reservation.reservation_status = '취소'
-                    reservation.save(
-                        update_fields=['reservation_status', 'updated_at']
-                    )
-
-                    # 4. 취소 문자 발송
-                    sms_sent = self.sms_sender.send_cancel_message(
-                        reservation, reason
-                    )
-
-                    if sms_sent:
-                        print(
-                            f"      ✅ 충돌 예약 취소 처리 및 문자 발송 | "
-                            f"예약자: {reservation.customer_name} | "
-                            f"예약번호: {reservation.naver_booking_id}"
-                        )
-                    else:
-                        print(
-                            f"      ⚠️ 예약 취소 처리 후 문자 미발송 → 확인 필요 | "
-                            f"예약자: {reservation.customer_name} | "
-                            f"예약번호: {reservation.naver_booking_id}"
-                        )
-
                     continue
 
-
-                
                 # 3. 쿠폰/일반 처리 딱 1번만 실행
                 if booking['is_coupon']:
                     success = bool(self.handle_coupon_booking(reservation, booking))  # ✅ 한 번만
@@ -838,10 +800,16 @@ class ReservationMonitor:
                         and conflict_result.get('action') == 'defer_cancel_until_coupon_confirmed'
                     ):
                         for target in conflict_result.get('cancel_targets', []):
-                            self.conflict_checker._cancel_reservation(
+                            cancelled = self.conflict_checker._cancel_reservation(
                                 target,
                                 reason="동일 시간대 예약 충돌"
                             )
+                            if not cancelled and not self.dry_run:
+                                self.conflict_checker.notify_owner_conflict(
+                                    f'쿠폰 확정 후 일반 예약 취소 실패: 이중 예약 확인 필요 | '
+                                    f'쿠폰 {reservation.naver_booking_id} | '
+                                    f'일반 {target.naver_booking_id}'
+                                )
                     
             except Exception as e:
                 print(f"   ❌ 예약 처리 오류: {e}")

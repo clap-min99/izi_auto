@@ -114,17 +114,8 @@ class ConflictChecker:
     
     
     def _handle_coupon_conflict(self, new_booking, conflicting_reservations):
-        """새 쿠폰 예약은 기존 확정 예약 및 입금 고객을 보호한다."""
+        """쿠폰 확정 후 일반 예약을 취소한다."""
         conflicts = list(conflicting_reservations)
-
-        # 기존 확정 예약은 쿠폰보다 우선 보호
-        if any(r.reservation_status == '확정' for r in conflicts):
-            print("      ⚠️ 기존 확정 예약 존재 → 새 쿠폰 예약 처리 보류")
-            return {
-                'has_conflict': True,
-                'action': 'hold',
-                'message': '기존 확정 예약과 충돌하여 수동 확인 필요'
-            }
 
         # 다른 쿠폰 예약과 충돌하면 임의로 우선순위를 정하지 않음
         if any(r.is_coupon for r in conflicts):
@@ -135,28 +126,15 @@ class ConflictChecker:
                 'message': '쿠폰 예약 간 충돌로 수동 확인 필요'
             }
 
-        # 신청 상태 일반 예약의 입금 흔적 보호
-        for r in conflicts:
-            if self._has_payment_evidence(r):
-                print(
-                    f"      ⚠️ 기존 일반 예약 입금 흔적 발견 "
-                    f"→ 새 쿠폰 처리 보류: {r.naver_booking_id}"
-                )
-                return {
-                    'has_conflict': True,
-                    'action': 'hold',
-                    'message': '기존 일반 예약 입금 확인 필요'
-                }
-
         cancel_targets = [
             r for r in conflicts
-            if not r.is_coupon and r.reservation_status == '신청'
+            if not r.is_coupon and r.reservation_status in ('신청', '확정')
         ]
 
         return {
             'has_conflict': True,
             'action': 'defer_cancel_until_coupon_confirmed',
-            'message': '쿠폰 확정 성공 후 기존 신청 예약 취소 검토',
+            'message': '쿠폰 확정 성공 후 충돌 일반 예약 취소',
             'cancel_targets': cancel_targets,
         }
 
@@ -197,53 +175,35 @@ class ConflictChecker:
         }
     
     
-    def _has_payment_evidence(self, reservation):
-        """기존 이름 매칭 규칙을 사용해 입금 흔적을 보수적으로 검사."""
-        linked = AccountTransaction.objects.filter(
-            matched_reservations=reservation,
-            transaction_type='입금',
-        ).exists()
-
-        if linked:
-            return True
-
-        from_date = timezone.localtime(
-            reservation.created_at
-        ).date()
-
-        candidates = AccountTransaction.objects.filter(
-            transaction_type='입금',
-            transaction_date__gte=from_date,
-        ).only('depositor_name')
-
-        return any(
-            name_matches(reservation.customer_name, t.depositor_name)
-            for t in candidates
-        )
+    def notify_owner_conflict(self, message):
+        """운영 로그와 사장님 알림으로 수동 확인을 요청한다."""
+        import logging
+        logging.getLogger(__name__).error(message)
+        owner_phone = getattr(settings, 'OWNER_PHONE', '')
+        if owner_phone and not self.dry_run:
+            try:
+                if not self.sms_sender.send_plain_message(
+                    to=owner_phone, content=message, msg_type='예약 충돌 확인'
+                ):
+                    logging.getLogger(__name__).error('사장님 충돌 알림 발송 실패')
+            except Exception:
+                logging.getLogger(__name__).exception('사장님 충돌 알림 오류')
 
     def _cancel_reservation(self, reservation, reason):
-        """미입금 일반 신청 예약만 취소 시도."""
+        """일반 신청/확정 예약을 입금 여부와 관계없이 취소한다."""
         try:
             if not is_allowed_customer(reservation.customer_name):
                 return False
 
             reservation.refresh_from_db()
 
-            # 쿠폰 예약과 이미 확정된 예약 보호
+            # 쿠폰 예약은 취소 대상에서 제외
             if (
                 reservation.is_coupon
-                or reservation.reservation_status != '신청'
+                or reservation.reservation_status not in ('신청', '확정')
             ):
                 print(
                     f"      🛡️ 취소 대상 상태 아님 → 보호: "
-                    f"{reservation.naver_booking_id}"
-                )
-                return False
-
-            # 입금 기록이 있거나 불명확하면 취소 금지
-            if self._has_payment_evidence(reservation):
-                print(
-                    f"      🛡️ 입금 흔적 발견 → 취소 보류: "
                     f"{reservation.naver_booking_id}"
                 )
                 return False
@@ -273,13 +233,14 @@ class ConflictChecker:
                     pk=reservation.pk
                 )
 
-                if current.reservation_status != '신청':
+                if current.is_coupon or current.reservation_status not in ('신청', '확정'):
                     print(
                         f"      ⚠️ 취소 중 DB 상태 변경 감지: "
                         f"{reservation.naver_booking_id}"
                     )
                     return False
 
+                self._mark_transaction_as_cancelled(current)
                 current.reservation_status = '취소'
                 current.save(
                     update_fields=['reservation_status', 'updated_at']
@@ -329,31 +290,30 @@ class ConflictChecker:
         """
         예약 취소 시 거래 내역도 취소 상태로 변경
         """
-        # 이 예약과 매칭된 거래 내역 찾기
+        # 연결된 입금 또는 기존 금액/이름 매칭 조건에 맞는 미매칭 입금만 기록.
         transactions = AccountTransaction.objects.filter(
-            matched_reservations=reservation
+            transaction_type='입금', matched_reservations=reservation
         )
-        
-        for trans in transactions:
-            trans.match_status = '취소'  # 취소 상태로 변경
-            trans.save()
-            print(f"         - 거래 내역 취소 처리: {trans.transaction_id}")
-        
-        # 아직 매칭 안된 거래도 찾아서 취소 처리
-        unmatched_candidates = AccountTransaction.objects.filter(
-            transaction_type='입금',
-            # depositor_name__icontains=reservation.customer_name,
-            amount=reservation.price,
-            transaction_date__gte=reservation.created_at.date(),
-            match_status='확정전'
+        candidates = AccountTransaction.objects.filter(
+            transaction_type='입금', amount=reservation.price,
+            transaction_date__gte=timezone.localtime(reservation.created_at).date(),
+            match_status='확정전', matched_reservations__isnull=True,
         )
-        
-        for trans in unmatched_candidates:
-            if not name_matches(reservation.customer_name, trans.depositor_name):
-                continue
+        targets = {t.pk: t for t in transactions}
+        for trans in candidates:
+            if name_matches(reservation.customer_name, trans.depositor_name):
+                targets[trans.pk] = trans
+        for trans in targets.values():
+            marker = f'[환불 확인 필요] 예약 {reservation.naver_booking_id}'
             trans.match_status = '취소'
-            trans.save()
-            print(f"         - 미매칭 거래 취소 처리: {trans.transaction_id}")
+            if marker not in (trans.memo or ''):
+                trans.memo = ((trans.memo or '') + '\n' + marker).strip()
+            trans.save(update_fields=['match_status', 'memo', 'updated_at'])
+            trans.matched_reservations.add(reservation)
+        if targets:
+            self.notify_owner_conflict(
+                f'일반 예약 취소: 환불 확인 필요 | 예약 {reservation.naver_booking_id}'
+            )
 
 
 def main():

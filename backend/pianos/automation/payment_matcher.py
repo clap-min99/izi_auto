@@ -286,24 +286,20 @@ class PaymentMatcher:
     def _confirm_reservations(
         self, reservations, transactions, conflict_winner=False
     ):
-        # 일반 입금 매칭으로 충돌 예약이 우회 확정되는 것 방지
-        if not conflict_winner:
-            for res in reservations:
-                overlap_exists = Reservation.objects.filter(
-                    room_name=res.room_name,
-                    reservation_date=res.reservation_date,
-                    reservation_status__in=['신청', '확정'],
-                    start_time__lt=res.end_time,
-                    end_time__gt=res.start_time,
-                ).exclude(pk=res.pk).exists()
-
-                if overlap_exists:
-                    print(
-                        f"      ⚠️ 입금 매칭 확정 보류 → 충돌 예약 존재 | "
-                        f"예약자: {res.customer_name} | "
-                        f"예약번호: {res.naver_booking_id}"
-                    )
-                    return 0
+        # 선입금 승자도 쿠폰 예약과 충돌하면 확정하지 않는다.
+        for res in reservations:
+            overlaps = Reservation.objects.filter(
+                room_name=res.room_name,
+                reservation_date=res.reservation_date,
+                reservation_status__in=['신청', '확정'],
+                start_time__lt=res.end_time,
+                end_time__gt=res.start_time,
+            ).exclude(pk=res.pk)
+            if conflict_winner:
+                overlaps = overlaps.filter(is_coupon=True)
+            if overlaps.exists():
+                print(f"      ⚠️ 입금 매칭 확정 보류: 충돌 예약 존재 | {res.naver_booking_id}")
+                return 0
 
         print("      🔄 예약 확정 처리 중...")
 
