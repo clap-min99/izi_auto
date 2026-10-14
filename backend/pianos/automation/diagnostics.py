@@ -29,6 +29,7 @@ class Diagnostics:
         self.events = queue.Queue(maxsize=256)
         self.stopping = threading.Event()
         self.previous = {}
+        self.system_cpu_previous = None
         self.thread = threading.Thread(target=self._run, name='izi-diagnostics', daemon=True)
 
     def start(self):
@@ -78,22 +79,50 @@ class Diagnostics:
         # Command lines, paths, URLs and window titles are deliberately never queried.
         script = r'''
 $ErrorActionPreference = 'Stop'
-$os = Get-CimInstance Win32_OperatingSystem -OperationTimeoutSec 5
-$cpu = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'" -OperationTimeoutSec 5
+$errors = @()
+$total = $null
+$available = $null
+$percent = $null
+$items = @()
+try {
+    $os = Get-CimInstance Win32_OperatingSystem -OperationTimeoutSec 5
+    $total = [long]$os.TotalVisibleMemorySize*1024
+    $available = [long]$os.FreePhysicalMemory*1024
+} catch {
+    $errors += @{component='memory'; category=[string]$_.CategoryInfo.Category; exception=$_.Exception.GetType().Name; hresult=$_.Exception.HResult}
+}
+try {
+    $cpu = Get-CimInstance Win32_PerfFormattedData_PerfOS_Processor -Filter "Name='_Total'" -OperationTimeoutSec 5
+    $percent = $cpu.PercentProcessorTime
+} catch {
+    $errors += @{component='cpu'; category=[string]$_.CategoryInfo.Category; exception=$_.Exception.GetType().Name; hresult=$_.Exception.HResult}
+}
+try {
 $items = @(Get-Process -Name chrome,chromedriver,python,pythonw,electron -ErrorAction SilentlyContinue | ForEach-Object {
     $seconds = $null
     $started = $null
     try { $seconds = $_.CPU; $started = $_.StartTime.ToUniversalTime().Ticks } catch {}
     [pscustomobject]@{name=$_.ProcessName; pid=$_.Id; memory_bytes=$_.WorkingSet64; cpu_seconds=$seconds; started=$started}
 })
-@{memory_total_bytes=[long]$os.TotalVisibleMemorySize*1024; memory_available_bytes=[long]$os.FreePhysicalMemory*1024; cpu_percent=$cpu.PercentProcessorTime; processes=$items} | ConvertTo-Json -Depth 4 -Compress
+} catch {
+    $errors += @{component='processes'; category=[string]$_.CategoryInfo.Category; exception=$_.Exception.GetType().Name; hresult=$_.Exception.HResult}
+}
+@{memory_total_bytes=$total; memory_available_bytes=$available; cpu_percent=$percent; processes=$items; collection_errors=$errors} | ConvertTo-Json -Depth 4 -Compress
 '''
         result = subprocess.run(['powershell.exe', '-NoProfile', '-NonInteractive', '-Command', script],
                                 capture_output=True, timeout=15,
                                 creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
         if result.returncode:
-            raise RuntimeError('system_collection_failed')
+            self._write(dict(timestamp=datetime.now().astimezone().isoformat(), pid=os.getpid(),
+                             event='collection_failed', component='powershell', exit_code=result.returncode))
+            return
         data = json.loads(result.stdout.decode('utf-8-sig'))
+        if os.name == 'nt' and (data['memory_total_bytes'] is None or data['cpu_percent'] is None):
+            try:
+                self._native_fallback(data)
+            except Exception as exc:
+                data.setdefault('collection_errors', []).append(
+                    {'component': 'native_fallback', 'exception': type(exc).__name__})
         now = time.monotonic()
         previous = self.previous
         self.previous = {}
@@ -107,7 +136,10 @@ $items = @(Get-Process -Name chrome,chromedriver,python,pythonw,electron -ErrorA
             proc['scope'] = 'monitor' if proc['pid'] == os.getpid() else 'all_pc_unclassified'
         data['process_counts'] = {name: sum(p['name'] == name for p in data['processes'])
                                   for name in ('chrome', 'chromedriver', 'python', 'pythonw', 'electron')}
-        data['memory_used_bytes'] = data['memory_total_bytes'] - data['memory_available_bytes']
+        total, available = data['memory_total_bytes'], data['memory_available_bytes']
+        data['memory_used_bytes'] = total - available if total is not None and available is not None else None
+        if any(error.get('component') == 'processes' for error in data.get('collection_errors', [])):
+            data['process_counts'] = None  # Collection failure is not a count of zero.
         try:
             # Read only target counts from the local debug endpoint; no driver calls.
             with build_opener(ProxyHandler({})).open('http://127.0.0.1:9222/json/list', timeout=2) as response:
@@ -122,6 +154,40 @@ $items = @(Get-Process -Name chrome,chromedriver,python,pythonw,electron -ErrorA
             data['browser_collection_error'] = type(exc).__name__
         self._write(dict(timestamp=datetime.now().astimezone().isoformat(), pid=os.getpid(),
                          event='resource_sample', **data))
+
+    def _native_fallback(self, data):
+        """Read Windows counters without WMI permissions or another dependency."""
+        import ctypes
+        from ctypes import wintypes
+
+        class MemoryStatus(ctypes.Structure):
+            _fields_ = [('length', wintypes.DWORD), ('load', wintypes.DWORD)] + [
+                (name, ctypes.c_ulonglong) for name in (
+                    'total_phys', 'available_phys', 'total_page', 'available_page',
+                    'total_virtual', 'available_virtual', 'available_extended')]
+
+        kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+        if data['memory_total_bytes'] is None:
+            status = MemoryStatus()
+            status.length = ctypes.sizeof(status)
+            if not kernel.GlobalMemoryStatusEx(ctypes.byref(status)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            data['memory_total_bytes'] = status.total_phys
+            data['memory_available_bytes'] = status.available_phys
+            data['memory_source'] = 'windows_native_fallback'
+        if data['cpu_percent'] is None:
+            idle, system, user = wintypes.FILETIME(), wintypes.FILETIME(), wintypes.FILETIME()
+            if not kernel.GetSystemTimes(ctypes.byref(idle), ctypes.byref(system), ctypes.byref(user)):
+                raise ctypes.WinError(ctypes.get_last_error())
+            def ticks(value):
+                return (value.dwHighDateTime << 32) | value.dwLowDateTime
+            current = (ticks(idle), ticks(system) + ticks(user))
+            previous = self.system_cpu_previous
+            self.system_cpu_previous = current
+            if previous and current[1] > previous[1]:
+                data['cpu_percent'] = round(max(0, min(100, 100 * (
+                    1 - (current[0] - previous[0]) / (current[1] - previous[1])))), 2)
+            data['cpu_source'] = 'windows_native_interval_average'
 
     def _window_count(self, targets):
         # CDP only reads window IDs, never navigates or modifies the browser.

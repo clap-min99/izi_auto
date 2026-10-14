@@ -10,6 +10,22 @@ from pianos.automation.diagnostics import Diagnostics
 
 
 class DiagnosticsTests(unittest.TestCase):
+    def test_failed_system_fields_do_not_drop_process_sample(self):
+        with tempfile.TemporaryDirectory() as directory:
+            collector = Diagnostics(directory)
+            sample = {'memory_total_bytes': None, 'memory_available_bytes': None,
+                      'cpu_percent': None, 'processes': [],
+                      'collection_errors': [{'component': 'memory', 'category': 'PermissionDenied'}]}
+            with patch('pianos.automation.diagnostics.subprocess.run', return_value=MagicMock(
+                    returncode=0, stdout=json.dumps(sample).encode())), patch(
+                    'pianos.automation.diagnostics.build_opener', side_effect=OSError), patch.object(
+                    collector, '_native_fallback', side_effect=OSError):
+                collector._snapshot()
+            record = json.loads(next(collector.directory.glob('*.jsonl')).read_text(encoding='utf-8'))
+            self.assertEqual(record['event'], 'resource_sample')
+            self.assertIsNone(record['memory_used_bytes'])
+            self.assertEqual(record['collection_errors'][0]['category'], 'PermissionDenied')
+
     def test_window_count_deduplicates_tabs_in_same_window(self):
         with tempfile.TemporaryDirectory() as directory:
             collector = Diagnostics(directory)
