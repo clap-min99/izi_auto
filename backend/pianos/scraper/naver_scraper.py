@@ -24,6 +24,7 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, parent_dir)
 
 from pianos.models import Reservation
+from pianos.automation import diagnostics
 # ⭐ 같은 폴더에 있는 utils를 직접 import
 from pianos.scraper.utils import parse_reservation_datetime, parse_price
 
@@ -58,11 +59,14 @@ class NaverPlaceScraper:
     def _connect_existing_chrome(self, chrome_options):
         """이미 실행 중인 Chrome에 연결"""
         try:
+            diagnostics.event('driver_connect_started')
             service = Service()
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            diagnostics.event('driver_connect_completed')
             print("✅ 기존 Chrome 연결 성공")
             return driver
         except Exception as e:
+            diagnostics.event('driver_connect_failed', error=type(e).__name__)
             print(f"❌ 기존 Chrome 연결 실패: {e}")
             raise
 
@@ -79,6 +83,7 @@ class NaverPlaceScraper:
 
         
     def restart_driver(self):
+        diagnostics.event('driver_restart_started')
         def launch_debug_chrome():
             print("🚀 디버깅 크롬 새로 실행")
 
@@ -122,6 +127,7 @@ class NaverPlaceScraper:
             self.driver = self._connect_existing_chrome(chrome_options)
 
         print("✅ driver 재생성 완료")
+        diagnostics.event('driver_restart_completed')
     
     def get_total_booking_count(self) -> int:
         """
@@ -916,6 +922,7 @@ class NaverPlaceScraper:
 
         old_handle = driver.current_window_handle
         old_handles = list(driver.window_handles)
+        diagnostics.event('browser_reopen_started', handles=len(old_handles), close_old=close_old, as_window=as_window)
         print(f"   🔎 before reopen: handles={len(old_handles)} current={old_handle}")
 
         # ✅ 새 창/탭 열기
@@ -950,6 +957,7 @@ class NaverPlaceScraper:
                 driver.switch_to.window(new_handle)
 
         print("🆕 세션 복구: 새 탭/창으로 예약 페이지 재오픈 완료")
+        diagnostics.event('browser_reopen_completed', handles=len(driver.window_handles))
     def is_logged_out(self) -> bool:
         """
         네이버 로그아웃/세션만료 감지.

@@ -27,7 +27,7 @@ from pianos.automation.account_sync import AccountSyncManager
 from pianos.automation.payment_matcher import PaymentMatcher
 from pianos.automation.coupon_manager import CouponManager
 from pianos.automation.utils import is_allowed_customer
-from pianos.automation import log_tee
+from pianos.automation import log_tee, diagnostics
 
 from django.utils import timezone
 # 알림톡(2)
@@ -254,6 +254,7 @@ class ReservationMonitor:
             try:
                 # Finish the previous booking cycle before honoring shutdown.
                 if os.path.isfile(stop_request):
+                    diagnostics.event('shutdown_request_observed')
                     stop_requested = True
                     os.remove(stop_request)
                     print('IZI AUTO stop requested: current cycle completed')
@@ -436,6 +437,7 @@ class ReservationMonitor:
                 time.sleep(3)
                 
             except KeyboardInterrupt:
+                diagnostics.event('shutdown_requested', source='keyboard')
                 print("\n\n⏹️ 사용자에 의해 중단됨")
                 break
             except Exception as e:
@@ -469,6 +471,7 @@ class ReservationMonitor:
                 print("\n⏰ 10초 후 재시도...")
                 time.sleep(10)
         
+        diagnostics.event('shutdown_before_driver_cleanup')
         if stop_requested:
             # Disconnect ChromeDriver without closing the attached Chrome browser.
             self.scraper.driver.service.stop()
@@ -1242,12 +1245,27 @@ def main():
     NAVER_URL = os.getenv('NAVER_RESERVATION_URL', '')
     
     # DRY_RUN 모드로 실행
-    monitor = ReservationMonitor(
-        naver_url=NAVER_URL,
-        dry_run=False
-    )
-    
-    monitor.run()
+    collector = None
+    try:
+        collector = diagnostics.Diagnostics()
+        collector.start()
+    except Exception:
+        pass
+    completed = False
+    try:
+        monitor = ReservationMonitor(
+            naver_url=NAVER_URL,
+            dry_run=False
+        )
+        monitor.run()
+        completed = True
+    finally:
+        diagnostics.event('monitor_exit', completed=completed)
+        if collector is not None:
+            try:
+                collector.stop()
+            except Exception:
+                pass
 
 
 if __name__ == "__main__":

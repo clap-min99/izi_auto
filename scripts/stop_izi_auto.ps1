@@ -42,6 +42,18 @@ if ($Preview) {
     exit 0
 }
 
+function Write-DiagnosticEvent([string]$EventName) {
+    try {
+        # Run separately with a deadline so inaccessible log storage cannot block shutdown.
+        $helper = Join-Path $PSScriptRoot 'write_diagnostic_event.py'
+        $process = Start-Process -FilePath $pythonPath -ArgumentList @('-X', 'utf8', "`"$helper`"", $EventName) -WindowStyle Hidden -PassThru
+        if (-not $process.WaitForExit(3000)) { $process.Kill() }
+    } catch {
+        Write-Warning 'Diagnostic event could not be recorded; continuing shutdown.'
+    }
+}
+Write-DiagnosticEvent 'shutdown_requested'
+
 # Ask the monitor to finish its current cycle before stopping other services.
 $monitors = @($targets | Where-Object Kind -eq 'Monitor')
 if ($monitors.Count) {
@@ -56,11 +68,13 @@ if ($monitors.Count) {
         Start-Sleep -Milliseconds 500
     } while ([DateTime]::UtcNow -lt $deadline)
     if ($remaining.Count) {
+        Write-DiagnosticEvent 'shutdown_monitor_timeout'
         Write-Warning 'Monitor is still busy or uses older code. Services left running. Wait for completion; do not force-stop during a booking operation.'
         exit 1
     }
 }
 
+Write-DiagnosticEvent 'shutdown_before_services_cleanup'
 foreach ($kind in @('Electron', 'Frontend', 'Backend')) {
     foreach ($item in @($targets | Where-Object Kind -eq $kind)) {
         # Recheck identity to avoid stopping a reused PID.
@@ -80,4 +94,5 @@ foreach ($kind in @('Electron', 'Frontend', 'Backend')) {
         Write-Host "Stopped $kind PID $($item.ProcessId)"
     }
 }
+Write-DiagnosticEvent 'shutdown_completed'
 Write-Host 'IZI AUTO stopped. Chrome and unrelated applications were left running.'
