@@ -4,7 +4,11 @@ from selenium.webdriver.support.ui import WebDriverWait
 from selenium.webdriver.support import expected_conditions as EC
 from selenium.webdriver.chrome.service import Service
 from selenium.webdriver.chrome.options import Options
-from selenium.common.exceptions import WebDriverException
+from selenium.common.exceptions import (
+    WebDriverException,
+    NoSuchElementException,
+    StaleElementReferenceException,
+)
 
 from datetime import datetime
 
@@ -20,6 +24,7 @@ parent_dir = os.path.dirname(os.path.dirname(current_dir))
 sys.path.insert(0, parent_dir)
 
 from pianos.models import Reservation
+from pianos.automation import diagnostics
 # ⭐ 같은 폴더에 있는 utils를 직접 import
 from pianos.scraper.utils import parse_reservation_datetime, parse_price
 
@@ -54,11 +59,14 @@ class NaverPlaceScraper:
     def _connect_existing_chrome(self, chrome_options):
         """이미 실행 중인 Chrome에 연결"""
         try:
+            diagnostics.event('driver_connect_started')
             service = Service()
             driver = webdriver.Chrome(service=service, options=chrome_options)
+            diagnostics.event('driver_connect_completed')
             print("✅ 기존 Chrome 연결 성공")
             return driver
         except Exception as e:
+            diagnostics.event('driver_connect_failed', error=type(e).__name__)
             print(f"❌ 기존 Chrome 연결 실패: {e}")
             raise
 
@@ -75,6 +83,7 @@ class NaverPlaceScraper:
 
         
     def restart_driver(self):
+        diagnostics.event('driver_restart_started')
         def launch_debug_chrome():
             print("🚀 디버깅 크롬 새로 실행")
 
@@ -118,6 +127,7 @@ class NaverPlaceScraper:
             self.driver = self._connect_existing_chrome(chrome_options)
 
         print("✅ driver 재생성 완료")
+        diagnostics.event('driver_restart_completed')
     
     def get_total_booking_count(self) -> int:
         """
@@ -468,47 +478,141 @@ class NaverPlaceScraper:
             print(f"⚠️ 예약 행 파싱 에러: {e}")
             return None
 
+    
     def _open_booking_sidebar(self, naver_booking_id):
-        """
-        기본 예약 리스트에서 특정 네이버 예약번호 행을 클릭해서
-        오른쪽 '예약 상세정보' 사이드바를 연다.
-        """
-        self.scroll_booking_list_to_bottom()  # ✅ 추가
-        try:
-            # 예약 행들 로딩될 때까지 기다리기
-            rows = WebDriverWait(self.driver, 10).until(
-                EC.presence_of_all_elements_located(
-                    (By.CSS_SELECTOR, "[class*='BookingListView__contents-user']")
-                )
+        """예약번호로 행을 찾아 상세 사이드바 열기"""
+
+        target_id = str(naver_booking_id).strip()
+        row_sel = "[class*='BookingListView__contents-user']"
+        number_sel = "[class*='BookingListView__book-number']"
+        sidebar_sel = "div.foot-btn-group"
+        close_sel = "[class*='SideFrame__close']"
+
+        max_attempts = 3
+
+        for attempt in range(1, max_attempts + 1):
+            print(
+                f"🔎 예약번호 검색: {target_id} "
+                f"({attempt}/{max_attempts})"
             )
 
-            for row in rows:
-                try:
-                    book_no_el = row.find_element(
-                        By.CSS_SELECTOR,
-                        "[class*='BookingListView__book-number']"
+            try:
+                # 이전 예약 사이드바가 남아 있으면 닫기
+                existing = self.driver.find_elements(
+                    By.CSS_SELECTOR, sidebar_sel
+                )
+
+                if any(el.is_displayed() for el in existing):
+                    close_buttons = self.driver.find_elements(
+                        By.CSS_SELECTOR, close_sel
                     )
-                    raw = (book_no_el.text or "").strip()
 
-                    m = re.search(r"\d+", raw)
-                    row_booking_id = m.group(0) if m else raw
+                    if not close_buttons:
+                        print("❌ 기존 사이드바 닫기 버튼 없음")
+                        return False
 
-                    if row_booking_id == str(naver_booking_id):
-                        # 행 전체 클릭 (체크박스 말고)
-                        self.driver.execute_script("arguments[0].click();", row)
-                        WebDriverWait(self.driver, 5).until(
-                        EC.presence_of_element_located((By.CSS_SELECTOR, "div.foot-btn-group"))
+                    self.driver.execute_script(
+                        "arguments[0].click();",
+                        close_buttons[0]
+                    )
+
+                    WebDriverWait(self.driver, 10).until(
+                        EC.invisibility_of_element_located(
+                            (By.CSS_SELECTOR, sidebar_sel)
                         )
-                        return True
-                except Exception:
+                    )
+
+                # 전체 예약 목록 로딩
+                self.scroll_booking_list_to_bottom()
+
+                rows = WebDriverWait(self.driver, 15).until(
+                    EC.presence_of_all_elements_located(
+                        (By.CSS_SELECTOR, row_sel)
+                    )
+                )
+
+            except Exception as e:
+                print(
+                    f"⚠️ 예약 목록 접근 실패: "
+                    f"{type(e).__name__}: {e}"
+                )
+
+                if attempt < max_attempts:
+                    time.sleep(2)
                     continue
 
-            print(f"⚠️ 사이드바를 열 예약을 찾지 못했습니다: {naver_booking_id}")
-            return False
+                return False
 
-        except Exception as e:
-            print(f"❌ 사이드바 열기 실패: {e}")
-            return False
+            matched_row = None
+            read_failures = 0
+
+            # 예약번호 검색
+            for row in rows:
+                try:
+                    number_el = row.find_element(
+                        By.CSS_SELECTOR, number_sel
+                    )
+
+                    raw = (number_el.text or "").strip()
+
+                    # 변경 배지가 포함되어도 예약번호 추출
+                    numbers = re.findall(r"\d+", raw)
+
+                    if target_id in numbers:
+                        matched_row = row
+                        break
+
+                except (
+                    NoSuchElementException,
+                    StaleElementReferenceException
+                ):
+                    read_failures += 1
+                    continue
+
+            if matched_row is None:
+                print(
+                    f"⚠️ 예약번호 검색 실패: {target_id} | "
+                    f"조회 행 {len(rows)}건 | "
+                    f"번호 읽기 실패 {read_failures}건"
+                )
+
+                if attempt < max_attempts:
+                    print("🔄 예약 목록 재검색")
+                    time.sleep(2)
+                    continue
+
+                print(f"❌ 예약번호 최종 검색 실패: {target_id}")
+                return False
+
+            print(f"✅ 예약번호 일치: {target_id}")
+
+            # 예약번호 검색과 클릭 실패를 별도로 처리
+            try:
+                self.driver.execute_script(
+                    "arguments[0].click();",
+                    matched_row
+                )
+
+                WebDriverWait(self.driver, 12).until(
+                    EC.visibility_of_element_located(
+                        (By.CSS_SELECTOR, sidebar_sel)
+                    )
+                )
+
+                print(f"✅ 예약 사이드바 열기 성공: {target_id}")
+                return True
+
+            except Exception as e:
+                print(
+                    f"❌ 예약번호는 찾았지만 사이드바 열기 실패: "
+                    f"{target_id} | {type(e).__name__}: {e}"
+                )
+
+                # 클릭 후 상태가 불확실하므로 무조건 재클릭하지 않음
+                return False
+
+        return False
+
 
     def save_to_db(self, bookings):
         """
@@ -721,11 +825,44 @@ class NaverPlaceScraper:
 
 
 
+    
     def refresh_page(self):
-        """페이지 새로고침"""
+        """예약 목록 로딩 완료를 확인한 후 새로고침 처리"""
+
+        container_selector = (
+            "[class*='BookingListView__booking-list-table-wrap']"
+        )
+        row_selector = (
+            "[class*='BookingListView__contents-user']"
+        )
+
+        print("🔄 네이버 예약 페이지 새로고침 시작")
+
         self.driver.refresh()
-        time.sleep(2)
-        self.scroll_booking_list_to_bottom() 
+
+        # 1. 예약 목록 컨테이너가 표시될 때까지 대기
+        WebDriverWait(self.driver, 30).until(
+            EC.visibility_of_element_located(
+                (By.CSS_SELECTOR, container_selector)
+            )
+        )
+
+        print("✅ 예약 목록 컨테이너 로딩 완료")
+
+        # 2. 실제 예약 행이 생성될 때까지 대기
+        WebDriverWait(self.driver, 30).until(
+            EC.presence_of_element_located(
+                (By.CSS_SELECTOR, row_selector)
+            )
+        )
+
+        print("✅ 예약 데이터 로딩 확인")
+
+        # 3. 목록이 나타난 후 기존 무한 스크롤 수행
+        self.scroll_booking_list_to_bottom()
+
+        print("✅ 예약 목록 새로고침 완료")
+
 
     def close(self):
         """브라우저 종료"""
@@ -785,6 +922,7 @@ class NaverPlaceScraper:
 
         old_handle = driver.current_window_handle
         old_handles = list(driver.window_handles)
+        diagnostics.event('browser_reopen_started', handles=len(old_handles), close_old=close_old, as_window=as_window)
         print(f"   🔎 before reopen: handles={len(old_handles)} current={old_handle}")
 
         # ✅ 새 창/탭 열기
@@ -819,6 +957,7 @@ class NaverPlaceScraper:
                 driver.switch_to.window(new_handle)
 
         print("🆕 세션 복구: 새 탭/창으로 예약 페이지 재오픈 완료")
+        diagnostics.event('browser_reopen_completed', handles=len(driver.window_handles))
     def is_logged_out(self) -> bool:
         """
         네이버 로그아웃/세션만료 감지.

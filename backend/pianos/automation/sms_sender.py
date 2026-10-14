@@ -238,7 +238,12 @@ class SMSSender:
                 to_number, "COUPON_CANCEL_TYPE", reservation, extra_ctx, msg_type="쿠폰 취소(유형 불일치)"
             )
 
-        if "선입금" in reason or "동시간대" in reason:
+        if not reservation.is_coupon and (
+            "선입금" in reason
+            or "동시간대" in reason
+            or "예약 충돌" in reason
+            or "시간대 충돌" in reason
+        ):
             return self._send_by_template(to_number, "NORMAL_CANCEL_CONFLICT", reservation, {}, msg_type="일반 취소(선입금 우선)")
         
         if ("입금" in reason and ("기한" in reason or "30분" in reason)) or ("자동 취소" in reason and "입금" in reason):

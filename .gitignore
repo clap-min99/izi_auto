@@ -2,6 +2,7 @@
 # Python / Django
 # ============================
 venv/
+.runtime/
 __pycache__/
 *.py[cod]
 *.sqlite3

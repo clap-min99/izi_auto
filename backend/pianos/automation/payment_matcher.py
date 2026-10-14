@@ -283,8 +283,25 @@ class PaymentMatcher:
         
         return []
     
-    def _confirm_reservations(self, reservations, transactions):
-        print(f"      🔄 예약 확정 처리 중...")
+    def _confirm_reservations(
+        self, reservations, transactions, conflict_winner=False
+    ):
+        # 선입금 승자도 쿠폰 예약과 충돌하면 확정하지 않는다.
+        for res in reservations:
+            overlaps = Reservation.objects.filter(
+                room_name=res.room_name,
+                reservation_date=res.reservation_date,
+                reservation_status__in=['신청', '확정'],
+                start_time__lt=res.end_time,
+                end_time__gt=res.start_time,
+            ).exclude(pk=res.pk)
+            if conflict_winner:
+                overlaps = overlaps.filter(is_coupon=True)
+            if overlaps.exists():
+                print(f"      ⚠️ 입금 매칭 확정 보류: 충돌 예약 존재 | {res.naver_booking_id}")
+                return 0
+
+        print("      🔄 예약 확정 처리 중...")
 
         confirmed_count = 0
         confirmed_reservations = []
@@ -523,13 +540,40 @@ class PaymentMatcher:
         winner_tx = first_payer['transaction']
 
         print(f"      🏆 선입금자: {winner_res.customer_name}")
+        
+        # 3. 선입금자 확정
+        confirmed_cnt = self._confirm_reservations(
+            [winner_res],
+            [winner_tx],
+            conflict_winner=True
+        )
 
-        # 3) winner 확정
-        confirmed_cnt = self._confirm_reservations([winner_res], [winner_tx])
-        did_actions = (confirmed_cnt > 0)
+        # 확정 실패 시 다른 예약 취소 금지
+        if confirmed_cnt != 1:
+            print(
+                f"      ⚠️ 선입금자 확정 실패 → 다른 예약 취소 중단 | "
+                f"예약자: {winner_res.customer_name} | "
+                f"예약번호: {winner_res.naver_booking_id}"
+            )
+            return False
 
-        # 4) loser 전부 취소 (문자 동일), 입금한 loser는 거래만 '취소' 표시
+        # DB 확정 상태까지 확인
+        winner_res.refresh_from_db(fields=['reservation_status'])
+
+        if winner_res.reservation_status != '확정':
+            print(
+                f"      ⚠️ 선입금자 DB 미확정 → 다른 예약 취소 중단 | "
+                f"예약번호: {winner_res.naver_booking_id}"
+            )
+            return False
+
+        print(f"      ✅ 선입금자 확정 완료: {winner_res.customer_name}")
+
+        did_actions = True
+
+        # 4. 선입금자를 제외한 예약 취소
         reason = "같은 시간대 선입금자 우선"
+
         for info in payment_info:
             res = info['reservation']
             trans = info['transaction']
@@ -537,10 +581,21 @@ class PaymentMatcher:
             if res.id == winner_res.id:
                 continue
 
-            print(f"      ❌ 자동 취소: {res.customer_name} (입금여부: {'입금' if trans else '미입금'})")
-            self._cancel_loser(reservation=res, reason=reason, trans=trans)
-            did_actions = True   # ✅ 취소 시도하면 조작 발생으로 간주
+            cancelled = self._cancel_loser(
+                reservation=res,
+                reason=reason,
+                trans=trans
+            )
+
+            if not cancelled:
+                print(
+                    f"      ⚠️ 충돌 예약 취소 실패/미확인 | "
+                    f"예약자: {res.customer_name} | "
+                    f"예약번호: {res.naver_booking_id}"
+                )
+
         return did_actions
+
     
     def _get_earliest_payment(self, reservation):
         """예약에 대한 가장 빠른 입금 내역 반환"""
