@@ -2,6 +2,10 @@
 
 운영 개선 및 조사 예정 사항: [TODO.md](TODO.md)
 
+사장님 알림 수신 번호는 프로젝트 루트의 `.env`에서 `OWNER_PHONE=번호`로 관리합니다.
+번호는 하이픈 없이 입력하고, 변경 후 백엔드와 모니터를 재시작하면 적용됩니다.
+미설정 시 사장님 알림은 발송하지 않습니다. `.env`는 Git 추적 대상에서 제외됩니다.
+
 장시간 실행 진단 로그는 모니터 시작 시와 **15분 간격**으로 자동 수집합니다.
 저장 위치는 `IZI_LOG_DIR/diagnostics`이며, 미설정 시 `backend/logs/diagnostics`입니다.
 파일명은 `diagnostics_YYYY-MM-DD.jsonl`이고 30일·전체 50MiB로 제한합니다.
